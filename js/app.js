@@ -514,8 +514,9 @@ function renderMehr() {
         <li>In <b>Erinnerungen</b> eine Liste <b>„Einkauf“</b> anlegen (Listentyp „Einkaufsliste“ sortiert automatisch nach Rubriken).</li>
         <li>Liste öffnen → <b>Teilen</b> → Steffi einladen. Ab dann synchronisiert iCloud die Liste.</li>
         <li>App <b>Kurzbefehle</b> → <b>+</b> → Name exakt: <b>${esc(state.shortcutName)}</b></li>
-        <li>Aktion <b>„Text teilen“</b> hinzufügen → Eingabe: <b>Kurzbefehleingabe</b>, Trennen bei: <b>Neue Zeilen</b>.</li>
-        <li>Aktion <b>„Wiederholen mit jedem Objekt“</b> → in <b>Geteilter Text</b>.</li>
+        <li><b>ⓘ</b> → <b>„Im Share-Sheet anzeigen“</b> einschalten. Im neuen Block oben „Wenn keine Eingabe vorhanden ist“ auf <b>„Fragen nach“</b> stellen.</li>
+        <li>Aktion <b>„Text aufteilen“</b> hinzufügen → <b>Kurzbefehleingabe</b> durch <b>Neue Zeilen</b> aufteilen.</li>
+        <li>Aktion <b>„Wiederholen mit jedem Objekt“</b> → in <b>Aufgeteilter Text</b>.</li>
         <li>Innerhalb der Schleife: <b>„Erinnerung hinzufügen“</b> → Text: <b>Wiederholungsobjekt</b>, Liste: <b>Einkauf</b>.</li>
         <li>Fertig. Beim ersten Senden fragt iOS einmal nach Erlaubnis.</li>
       </ol>

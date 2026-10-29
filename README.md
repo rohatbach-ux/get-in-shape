@@ -38,9 +38,10 @@ URL in **Safari** öffnen, dann *Teilen → „Zum Home-Bildschirm“*.
 
 App *Kurzbefehle* öffnen, dann **+** tippen. Name: **Einkauf an Erinnerungen** (lässt sich unter *Mehr* in der App ändern).
 
-1. Aktion **Text teilen**: Eingabe *Kurzbefehleingabe*, Trennen bei *Neue Zeilen*
-2. Aktion **Wiederholen mit jedem Objekt** in *Geteilter Text*
-3. In der Schleife die Aktion **Erinnerung hinzufügen**: Text *Wiederholungsobjekt*, Liste *Einkauf*
+1. **ⓘ → „Im Share-Sheet anzeigen“** einschalten, damit der Kurzbefehl Eingaben empfängt. Im Block oben „Wenn keine Eingabe vorhanden ist“ auf *Fragen nach* stellen.
+2. Aktion **Text aufteilen**: *Kurzbefehleingabe* durch *Neue Zeilen* aufteilen
+3. Aktion **Wiederholen mit jedem Objekt** in *Aufgeteilter Text*
+4. In der Schleife die Aktion **Erinnerung hinzufügen**: Text *Wiederholungsobjekt*, Liste *Einkauf*
 
 In der App unter *Mehr → Test senden* lässt sich der Kurzbefehl prüfen.
 
