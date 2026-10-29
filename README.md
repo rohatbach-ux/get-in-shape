@@ -4,7 +4,11 @@ Web-App (PWA) für das iPhone: 8-Wochen-Trainingsplan für Rohat und Steffi, Ess
 
 ## Funktionen
 
-- **Training:** Je ein Plan für Rohat (Laufen im Freien und Pamela Reif ohne Geräte) und für Steffi (Studio Ganzkörper A/B, Pamela Reif und Cardio). Pro Woche 3 feste und 1 optionale Einheit. Woche 4 dient der Entlastung, Woche 8 schließt mit einem 5-km-Test ab.
+- **Training (Start Mo 09.11.2026):**
+  - Rohat: 18 Wochen bis zum 20-km-Lauf (So 14.03.2027), danach Erhaltung. Knieschonend aufgebaut: Knie-Kraft A ist Pflicht, B ist optional, Pamela Reif ohne Sprünge, in Woche 1–4 keine Intervalle. Entlastung in Woche 4, 8, 12 und 15.
+  - Jede Kraftübung hat eine bebilderte Anleitung (Start → Ende), die Dosierung der Woche und Hinweise fürs Knie.
+  - Beim Bestätigen eines Laufs gibt es einen Knie-Check. Bei Schmerz schlägt die App „Woche wiederholen“ vor, das Ziel verschiebt sich dann automatisch.
+  - Steffi: 8 Wochen Studio Ganzkörper A/B, Pamela Reif und Cardio.
   - Einheiten werden mit Gefühl (1–5) und optionaler Notiz bestätigt.
   - Die App zeigt den Wochenfortschritt, eine Wochen-Serie und die Zahl der Einheiten gesamt.
 - **Essen:** 19 Rezepte, 12 davon vegetarisch oder vegan. Die App zeigt kcal pro Portion und die Zubereitungszeit. Rezepte lassen sich pro Tag einplanen und die Portionen anpassen. „Woche vorschlagen“ füllt freie Tage mit etwa ⅔ Veggie-Gerichten.
@@ -51,4 +55,4 @@ Alle Daten liegen lokal auf dem jeweiligen iPhone (`localStorage`), es gibt kein
 
 ## Technik
 
-`index.html`, `css/styles.css`, `js/app.js` (UI), `js/training.js` (Plan), `js/recipes.js` (Rezepte), `sw.js` (Offline-Cache, bei Updates `VERSION` erhöhen), `manifest.webmanifest`.
+`index.html`, `css/styles.css`, `js/app.js` (UI), `js/training.js` (Plan), `js/exercises.js` (Übungen mit Zeichnungen), `js/recipes.js` (Rezepte), `sw.js` (Offline-Cache, bei Updates `VERSION` erhöhen), `manifest.webmanifest`.

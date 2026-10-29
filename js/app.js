@@ -1,5 +1,6 @@
 import { RECIPES, CATEGORIES, DIET_LABEL } from "./recipes.js";
-import { WEEKS, sessionsFor, PEOPLE } from "./training.js";
+import { WEEKS, GOAL_WEEK, PLAN_START, PLAN_VERSION, sessionsFor, weekLabel, PEOPLE } from "./training.js";
+import { EXERCISES, illustration } from "./exercises.js";
 
 // ---------- Speicher ----------
 const KEY = "gis-state-v1";
@@ -20,7 +21,9 @@ const fmtDate = (d) => d.toLocaleDateString("de-DE", { day: "2-digit", month: "2
 function defaultState() {
   return {
     profile: "rohat",
-    startDate: iso(mondayOf(new Date())),
+    startDate: PLAN_START,
+    planVersion: PLAN_VERSION,
+    repeats: { rohat: [], steffi: [] },
     done: { rohat: {}, steffi: {} },
     meals: {},      // { "YYYY-MM-DD"(Montag): { Mo: [{rid, servings}], ... } }
     shopping: {},   // { weekKey: { checked:{}, pantry:{}, sent:{}, extra:[] } }
@@ -32,11 +35,22 @@ function defaultState() {
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...defaultState(), ...JSON.parse(raw) };
+    if (raw) {
+      const saved = JSON.parse(raw);
+      const s = { ...defaultState(), ...saved };
+      // Neuer Plan: Start 09.11.2026, alte Bestätigungen bleiben als Historie
+      if (saved.planVersion !== PLAN_VERSION) {
+        s.startDate = PLAN_START;
+        s.repeats = { rohat: [], steffi: [] };
+        s.planVersion = PLAN_VERSION;
+      }
+      return s;
+    }
   } catch (e) { /* privater Modus o. ä. */ }
   return defaultState();
 }
 let state = load();
+save();
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* ignorieren */ }
 }
@@ -44,7 +58,7 @@ function save() {
 // UI-Zustand (nicht gespeichert)
 const ui = {
   tab: "training",
-  trainingWeek: null,
+  trainingCal: null,
   mealWeek: iso(mondayOf(new Date())),
   recipeFilter: "alle",
 };
@@ -84,43 +98,81 @@ function scaleQty(q, unit, factor) {
 }
 
 // ---------- Training ----------
-function currentTrainingWeek() {
-  const start = parseIso(state.startDate);
-  const diff = Math.floor((mondayOf(new Date()) - start) / (7 * 864e5));
-  return Math.min(WEEKS, Math.max(1, diff + 1));
+// Kalenderwoche c (1, 2, …) ab Startdatum → Planwoche. „Woche wiederholen“
+// fügt die Planwoche ein weiteres Mal ein; Bestätigungen gelten je Kalenderwoche.
+function planSeq(person) {
+  const reps = state.repeats[person] || [];
+  const seq = [];
+  for (let w = 1; w <= WEEKS[person]; w++) {
+    seq.push(w);
+    for (const r of reps) if (r === w) seq.push(w);
+  }
+  return seq;
 }
-function weekComplete(person, week) {
-  return sessionsFor(person, week).filter((s) => !s.optional).every((s) => state.done[person][s.id]);
+function todayCal() {
+  const diff = Math.floor((mondayOf(new Date()) - parseIso(state.startDate)) / (7 * 864e5));
+  return diff + 1; // < 1: Plan hat noch nicht begonnen
+}
+const clampCal = (person, c) => Math.min(planSeq(person).length, Math.max(1, c));
+const doneKey = (c, id) => `c${c}:${id}`;
+const isDone = (person, c, id) => state.done[person][doneKey(c, id)];
+
+function weekComplete(person, c) {
+  const w = planSeq(person)[c - 1];
+  if (!w) return false;
+  return sessionsFor(person, w).filter((s) => !s.optional).every((s) => isDone(person, c, s.id));
 }
 function streak(person) {
-  let w = currentTrainingWeek();
-  if (!weekComplete(person, w)) w--;
+  let c = clampCal(person, todayCal());
+  if (!weekComplete(person, c)) c--;
   let n = 0;
-  while (w >= 1 && weekComplete(person, w)) { n++; w--; }
+  while (c >= 1 && weekComplete(person, c)) { n++; c--; }
   return n;
 }
 function totalDone(person) {
   return Object.keys(state.done[person] || {}).length;
 }
+function goalDate() {
+  const c = planSeq("rohat").indexOf(GOAL_WEEK) + 1;
+  return addDays(parseIso(state.startDate), (c - 1) * 7 + 6);
+}
 
 function renderTraining() {
   const p = state.profile;
-  const week = ui.trainingWeek ?? currentTrainingWeek();
-  ui.trainingWeek = week;
-  const start = addDays(parseIso(state.startDate), (week - 1) * 7);
-  const sessions = sessionsFor(p, week);
+  const seq = planSeq(p);
+  const c = ui.trainingCal ?? clampCal(p, todayCal());
+  ui.trainingCal = c;
+  const w = seq[c - 1];
+  const start = addDays(parseIso(state.startDate), (c - 1) * 7);
+  const sessions = sessionsFor(p, w);
   const required = sessions.filter((s) => !s.optional);
-  const doneReq = required.filter((s) => state.done[p][s.id]).length;
+  const doneReq = required.filter((s) => isDone(p, c, s.id)).length;
   const pct = Math.round((doneReq / required.length) * 100);
-  const isCurrent = week === currentTrainingWeek();
+  const now = todayCal();
+  const isCurrent = c === now;
+  const isRepeat = c > 1 && seq[c - 2] === w;
   const other = p === "rohat" ? "steffi" : "rohat";
+  const title = p === "rohat" && w > GOAL_WEEK ? `Erhaltung · Woche ${w - GOAL_WEEK}` : `Woche ${w} von ${p === "rohat" ? GOAL_WEEK : WEEKS[p]}`;
+  const extra = [weekLabel(p, w), isRepeat ? "Wiederholung" : ""].filter(Boolean).join(" · ");
+
+  let banner = "";
+  if (now < 1) {
+    banner = `<div class="banner">Der Plan startet am <b>Mo ${parseIso(state.startDate).toLocaleDateString("de-DE")}</b>. Bis dahin: schönen Urlaub! Die Einheiten kannst du dir schon ansehen.</div>`;
+  } else if (p === "rohat") {
+    const gd = goalDate();
+    const left = Math.ceil((gd - new Date()) / (7 * 864e5));
+    banner = left > 0
+      ? `<div class="banner">🎯 <b>20 km</b> am So ${gd.toLocaleDateString("de-DE")} · noch ${left} ${left === 1 ? "Woche" : "Wochen"}</div>`
+      : `<div class="banner">🎯 Zielwoche geschafft – jetzt <b>Erhaltung</b>: regelmäßig 20 km halten.</div>`;
+  }
 
   return `
+    ${banner}
     <div class="weeknav">
-      <button data-act="tweek" data-d="-1" ${week <= 1 ? "disabled" : ""} aria-label="Vorherige Woche">‹</button>
-      <div class="label"><strong>Woche ${week} von ${WEEKS}${week === 4 ? " · Entlastung" : ""}</strong>
-        <span>${fmtDate(start)} – ${fmtDate(addDays(start, 6))}${isCurrent ? " · aktuell" : ""}</span></div>
-      <button data-act="tweek" data-d="1" ${week >= WEEKS ? "disabled" : ""} aria-label="Nächste Woche">›</button>
+      <button data-act="tweek" data-d="-1" ${c <= 1 ? "disabled" : ""} aria-label="Vorherige Woche">‹</button>
+      <div class="label"><strong>${title}</strong>
+        <span>${fmtDate(start)} – ${fmtDate(addDays(start, 6))}${extra ? " · " + extra : ""}${isCurrent ? " · aktuell" : ""}</span></div>
+      <button data-act="tweek" data-d="1" ${c >= seq.length ? "disabled" : ""} aria-label="Nächste Woche">›</button>
     </div>
 
     <div class="card">
@@ -131,18 +183,31 @@ function renderTraining() {
       <div class="stats">
         <div class="stat"><b>${streak(p)}</b><span>Wochen-Serie</span></div>
         <div class="stat"><b>${totalDone(p)}</b><span>Einheiten gesamt</span></div>
-        <div class="stat"><b>${weekComplete(other, week) ? "✓" : "–"}</b><span>${PEOPLE[other]} diese Woche*</span></div>
+        <div class="stat"><b>${weekComplete(other, c) ? "✓" : "–"}</b><span>${PEOPLE[other]} diese Woche*</span></div>
       </div>
     </div>
 
     <div class="section-title">Einheiten</div>
-    ${sessions.map((s) => sessionCard(p, s)).join("")}
-    <p class="hint">Optionale Einheiten zählen nicht für die Serie. Plane mindestens einen Ruhetag zwischen harten Einheiten.<br>
+    ${sessions.map((s) => sessionCard(p, c, s)).join("")}
+    ${isCurrent ? `<p><button class="btn small block" data-act="repeat-week">↻ Diese Woche nächste Woche wiederholen</button></p>` : ""}
+    <p class="hint">Optionale Einheiten zählen nicht für die Serie.${p === "rohat" ? " Knie-Regel: Schmerz, Schwellung oder Wegknick-Gefühl → Pause und Woche wiederholen." : ""}<br>
     * Zeigt nur, was auf <em>diesem</em> iPhone abgehakt wurde.</p>`;
 }
 
-function sessionCard(p, s) {
-  const log = state.done[p][s.id];
+const TYPE_LABEL = { lauf: "Laufen", reif: "Pamela Reif", studio: "Studio", cardio: "Cardio", kraft: "Kraft" };
+const KNEE = { ok: "Knie ok", light: "Knie leicht spürbar", pain: "Knie: Schmerz/Schwellung" };
+const KNEE_ICON = { ok: "🟢", light: "🟡", pain: "🔴" };
+
+function exerciseList(exs) {
+  return `<ul class="ex-list">${exs.map((e) => {
+    if (typeof e === "string") return `<li>• ${esc(e)}</li>`;
+    const ex = EXERCISES[e.id];
+    return `<li><button class="ex-btn" data-act="exercise" data-id="${e.id}" data-dose="${esc(e.dose)}"><span>${esc(ex.name)}<small>${esc(e.dose)}</small></span></button></li>`;
+  }).join("")}</ul>`;
+}
+
+function sessionCard(p, c, s) {
+  const log = isDone(p, c, s.id);
   const feelIcon = ["", "😫", "😕", "🙂", "😊", "💪"];
   return `
     <div class="card session ${log ? "done" : ""}">
@@ -150,42 +215,99 @@ function sessionCard(p, s) {
       <div class="body">
         <div class="title">${esc(s.title)}</div>
         <div class="meta">
-          <span class="tag ${s.type}">${{ lauf: "Laufen", reif: "Pamela Reif", studio: "Studio", cardio: "Cardio" }[s.type]}</span>
+          <span class="tag ${s.type}">${TYPE_LABEL[s.type]}</span>
           ${s.together ? '<span class="tag reif">gemeinsam</span>' : ""}
           ${s.optional ? '<span class="tag">optional</span>' : ""}
           <span>Vorschlag: ${s.day}</span>${s.minutes ? `<span>· ${s.minutes} Min</span>` : ""}
         </div>
         <div class="detail">${esc(s.detail)}</div>
-        ${s.exercises ? `<ul>${s.exercises.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}
-        ${log ? `<div class="logged">Erledigt am ${new Date(log.at).toLocaleDateString("de-DE")} ${feelIcon[log.feel] || ""}${log.note ? " · " + esc(log.note) : ""}</div>` : ""}
+        ${s.exercises ? exerciseList(s.exercises) : ""}
+        ${log ? `<div class="logged">Erledigt am ${new Date(log.at).toLocaleDateString("de-DE")} ${feelIcon[log.feel] || ""}${log.knee ? " · " + KNEE_ICON[log.knee] + " " + KNEE[log.knee] : ""}${log.note ? " · " + esc(log.note) : ""}</div>` : ""}
         ${s.link ? `<div class="actions"><a class="btn small" href="${s.link}" target="_blank" rel="noopener">▶ Videos auf YouTube</a></div>` : ""}
       </div>
     </div>`;
 }
 
+function openExercise(id, dose) {
+  const ex = EXERCISES[id];
+  openSheet(ex.name, `
+    ${illustration(ex)}
+    ${dose ? `<div class="ex-dose">Diese Woche: ${esc(dose)}</div>` : ""}
+    <p class="hint" style="margin:4px 0">${esc(ex.goal)}</p>
+    <div class="ex-sec">So geht's</div>
+    <ol>${ex.steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>
+    <div class="knee-box">
+      <div class="ex-sec">Achte auf dein Knie</div>
+      <ul>${ex.knee.map((x) => `<li>${esc(x)}</li>`).join("")}
+        <li>Sofort aufhören bei stechendem Schmerz, Schwellung oder Wegknick-Gefühl.</li></ul>
+    </div>
+    <div class="ex-sec">Typische Fehler</div>
+    <ul>${ex.mistakes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+    <p class="hint">Orange = arbeitendes Bein. Die Zeichnungen sind schematisch.</p>
+    <p><a class="btn block" href="https://www.youtube.com/results?search_query=${encodeURIComponent(ex.video)}" target="_blank" rel="noopener">▶ Video-Beispiele auf YouTube</a></p>`);
+}
+
+function repeatWeek() {
+  const p = state.profile;
+  const c = todayCal();
+  const w = planSeq(p)[c - 1];
+  if (!w) return;
+  const msg = p === "rohat"
+    ? `Woche ${w} nächste Woche noch einmal machen? Das 20-km-Ziel verschiebt sich um eine Woche.`
+    : `Woche ${w} nächste Woche noch einmal machen?`;
+  if (!confirm(msg)) return;
+  (state.repeats[p] ||= []).push(w);
+  save(); closeSheet(); render();
+  toast(`Woche ${w} wird wiederholt`);
+}
+
 function openConfirm(id) {
   const p = state.profile;
-  const week = ui.trainingWeek;
-  const s = sessionsFor(p, week).find((x) => x.id === id);
-  let feel = 0;
+  const c = ui.trainingCal;
+  const s = sessionsFor(p, planSeq(p)[c - 1]).find((x) => x.id === id);
+  const askKnee = p === "rohat" && s.knee;
+  let feel = 0, knee = null;
   openSheet(`Einheit bestätigen`, `
     <p><b>${esc(s.title)}</b></p>
     <p class="hint">Wie hat es sich angefühlt?</p>
     <div class="feel">${["😫", "😕", "🙂", "😊", "💪"].map((f, i) => `<button data-feel="${i + 1}" aria-pressed="false">${f}</button>`).join("")}</div>
+    ${askKnee ? `
+      <p class="hint">Knie-Check (während und nach der Einheit)</p>
+      <div class="feel">${Object.keys(KNEE).map((k) => `<button data-knee="${k}" aria-pressed="false" style="font-size:13px">${KNEE_ICON[k]}<br>${{ ok: "ok", light: "leicht spürbar", pain: "Schmerz / Schwellung" }[k]}</button>`).join("")}</div>` : ""}
     <p class="hint">Notiz (optional)</p>
-    <textarea id="c-note" placeholder="z. B. 5,2 km, Knie ok"></textarea>
+    <textarea id="c-note" placeholder="${s.km ? `z. B. ${s.km} km in 45 Min` : "z. B. alles gut"}"></textarea>
     <p><button class="btn primary block" id="c-save">Bestätigen</button></p>`);
   const sheet = $("#sheet");
-  sheet.querySelectorAll("[data-feel]").forEach((b) =>
+  const pick = (attr, set) => sheet.querySelectorAll(`[data-${attr}]`).forEach((b) =>
     b.addEventListener("click", () => {
-      feel = +b.dataset.feel;
-      sheet.querySelectorAll("[data-feel]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+      set(b.dataset[attr]);
+      sheet.querySelectorAll(`[data-${attr}]`).forEach((x) => x.setAttribute("aria-pressed", x === b));
     }));
+  pick("feel", (v) => (feel = +v));
+  pick("knee", (v) => (knee = v));
   $("#c-save", sheet).addEventListener("click", () => {
-    state.done[p][id] = { at: Date.now(), feel, note: $("#c-note", sheet).value.trim() };
+    state.done[p][doneKey(c, id)] = { at: Date.now(), feel, knee, note: $("#c-note", sheet).value.trim() };
     save(); closeSheet(); render();
-    toast(weekComplete(p, week) ? "Woche geschafft! 🎉" : "Einheit bestätigt");
+    if (knee === "pain") openKneeAdvice(c);
+    else if (knee === "light") toast("Beobachten: wird es stärker → Pause machen");
+    else toast(weekComplete(p, c) ? "Woche geschafft! 🎉" : "Einheit bestätigt");
   });
+}
+
+function openKneeAdvice(c) {
+  const canRepeat = c === todayCal();
+  openSheet("Dein Knie meldet sich", `
+    <div class="knee-box">
+      <ul>
+        <li><b>Die nächsten 2–3 Tage nicht laufen.</b> Gehen, Radfahren und Knie-Kraft B ohne Schmerz sind okay.</li>
+        <li>Bei Schwellung: hochlegen und kühlen (Kühlpack in ein Tuch, 15 Min).</li>
+        <li>Danach mit einem kurzen, lockeren Lauf testen. Ist er schmerzfrei, geht es mit dem Plan weiter.</li>
+        <li><b>Wenn die Schwellung bleibt, das Knie wegknickt oder blockiert: ärztlich abklären lassen.</b> Bei Knien ohne Kreuzband kann das ein Hinweis auf einen Meniskusschaden sein.</li>
+      </ul>
+    </div>
+    ${canRepeat ? `<p><button class="btn primary block" data-act-sheet="repeat">↻ Diese Woche nächste Woche wiederholen</button></p>` : ""}
+  `);
+  $("#sheet [data-act-sheet='repeat']")?.addEventListener("click", repeatWeek);
 }
 
 // ---------- Essen ----------
@@ -498,7 +620,9 @@ function renderMehr() {
     <div class="card">
       <label class="hint" for="s-start">Start (Montag der Woche 1)</label>
       <input type="date" id="s-start" value="${state.startDate}">
-      <p class="hint">Aktuell: Woche ${currentTrainingWeek()} von ${WEEKS}. Das Datum wird automatisch auf den Montag gesetzt.</p>
+      <p class="hint">Gilt für Rohat und Steffi. Das Datum wird automatisch auf den Montag gesetzt.${todayCal() < 1 ? " Der Plan hat noch nicht begonnen." : ""}</p>
+      ${(state.repeats.rohat.length || state.repeats.steffi.length) ? `<p class="hint">Wiederholte Wochen – Rohat: ${state.repeats.rohat.join(", ") || "keine"} · Steffi: ${state.repeats.steffi.join(", ") || "keine"}</p>
+      <button class="btn small danger" data-act="reset-repeats">Wiederholungen zurücknehmen</button>` : ""}
     </div>
 
     <div class="section-title">Essen</div>
@@ -595,7 +719,7 @@ document.querySelector(".tabbar").addEventListener("click", (e) => {
 });
 document.querySelector(".profile-switch").addEventListener("click", (e) => {
   const b = e.target.closest("[data-profile]"); if (!b) return;
-  state.profile = b.dataset.profile; save(); render();
+  state.profile = b.dataset.profile; ui.trainingCal = null; save(); render();
 });
 
 const view = $("#view");
@@ -604,11 +728,19 @@ view.addEventListener("click", (e) => {
   const act = b.dataset.act;
   const wk = ui.mealWeek;
   switch (act) {
-    case "tweek": ui.trainingWeek = Math.min(WEEKS, Math.max(1, ui.trainingWeek + +b.dataset.d)); render(); break;
+    case "tweek": ui.trainingCal = clampCal(state.profile, ui.trainingCal + +b.dataset.d); render(); break;
+    case "exercise": openExercise(b.dataset.id, b.dataset.dose); break;
+    case "repeat-week": repeatWeek(); break;
+    case "reset-repeats":
+      if (confirm("Alle Wochen-Wiederholungen zurücknehmen? Abgehakte Einheiten bleiben gespeichert.")) {
+        state.repeats = { rohat: [], steffi: [] }; ui.trainingCal = null; save(); render();
+      }
+      break;
     case "toggle-session": {
       const id = b.dataset.id;
-      if (state.done[state.profile][id]) {
-        if (confirm("Bestätigung dieser Einheit zurücknehmen?")) { delete state.done[state.profile][id]; save(); render(); }
+      const key = doneKey(ui.trainingCal, id);
+      if (state.done[state.profile][key]) {
+        if (confirm("Bestätigung dieser Einheit zurücknehmen?")) { delete state.done[state.profile][key]; save(); render(); }
       } else openConfirm(id);
       break;
     }
@@ -651,7 +783,7 @@ view.addEventListener("change", (e) => {
   if (t.dataset.check) { ss.checked[t.dataset.check] = t.checked; if (!t.checked) delete ss.checked[t.dataset.check]; save(); render(); }
   else if (t.dataset.pantry) { if (t.checked) ss.pantry[t.dataset.pantry] = true; else delete ss.pantry[t.dataset.pantry]; save(); render(); }
   else if (t.dataset.xcheck) { const x = ss.extra.find((y) => y.id === t.dataset.xcheck); if (x) x.checked = t.checked; save(); render(); }
-  else if (t.id === "s-start" && t.value) { state.startDate = iso(mondayOf(parseIso(t.value))); ui.trainingWeek = null; save(); render(); toast("Startdatum gespeichert"); }
+  else if (t.id === "s-start" && t.value) { state.startDate = iso(mondayOf(parseIso(t.value))); ui.trainingCal = null; save(); render(); toast("Startdatum gespeichert"); }
   else if (t.id === "s-srv") { state.householdServings = +t.value; save(); }
   else if (t.id === "s-sc") { state.shortcutName = t.value.trim() || defaultState().shortcutName; save(); render(); }
   else if (t.id === "s-import" && t.files[0]) importData(t.files[0]);
