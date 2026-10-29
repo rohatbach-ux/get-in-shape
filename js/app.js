@@ -1,0 +1,672 @@
+import { RECIPES, CATEGORIES, DIET_LABEL } from "./recipes.js";
+import { WEEKS, sessionsFor, PEOPLE } from "./training.js";
+
+// ---------- Speicher ----------
+const KEY = "gis-state-v1";
+const DAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+function mondayOf(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const wd = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - wd);
+  return d;
+}
+const iso = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const parseIso = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const fmtDate = (d) => d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+
+function defaultState() {
+  return {
+    profile: "rohat",
+    startDate: iso(mondayOf(new Date())),
+    done: { rohat: {}, steffi: {} },
+    meals: {},      // { "YYYY-MM-DD"(Montag): { Mo: [{rid, servings}], ... } }
+    shopping: {},   // { weekKey: { checked:{}, pantry:{}, sent:{}, extra:[] } }
+    shortcutName: "Einkauf an Erinnerungen",
+    householdServings: 2,
+  };
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return { ...defaultState(), ...JSON.parse(raw) };
+  } catch (e) { /* privater Modus o. ä. */ }
+  return defaultState();
+}
+let state = load();
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* ignorieren */ }
+}
+
+// UI-Zustand (nicht gespeichert)
+const ui = {
+  tab: "training",
+  trainingWeek: null,
+  mealWeek: iso(mondayOf(new Date())),
+  recipeFilter: "alle",
+};
+
+// ---------- Helfer ----------
+const $ = (sel, root = document) => root.querySelector(sel);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const recipeById = (id) => RECIPES.find((r) => r.id === id);
+const isVeg = (r) => r.diet === "vegan" || r.diet === "vegetarisch";
+
+function toast(msg) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+function fmtQty(q) {
+  if (q == null) return "";
+  const whole = Math.floor(q + 1e-9);
+  const frac = Math.round((q - whole) * 100) / 100;
+  const fr = { 0.25: "¼", 0.5: "½", 0.75: "¾" }[frac];
+  if (fr) return (whole ? whole : "") + fr;
+  return (Math.round(q * 10) / 10).toLocaleString("de-DE");
+}
+function fmtAmount(q, unit) {
+  if (q == null) return unit ? `Menge lt. Rezept` : "";
+  return `${fmtQty(q)}${unit ? " " + unit : ""}`;
+}
+function scaleQty(q, unit, factor) {
+  if (q == null) return null;
+  const v = q * factor;
+  // Zählbares auf Viertel aufrunden, Gewichte auf ganze Zahlen
+  if (["g", "ml"].includes(unit)) return Math.round(v);
+  return Math.ceil(v * 4 - 1e-9) / 4;
+}
+
+// ---------- Training ----------
+function currentTrainingWeek() {
+  const start = parseIso(state.startDate);
+  const diff = Math.floor((mondayOf(new Date()) - start) / (7 * 864e5));
+  return Math.min(WEEKS, Math.max(1, diff + 1));
+}
+function weekComplete(person, week) {
+  return sessionsFor(person, week).filter((s) => !s.optional).every((s) => state.done[person][s.id]);
+}
+function streak(person) {
+  let w = currentTrainingWeek();
+  if (!weekComplete(person, w)) w--;
+  let n = 0;
+  while (w >= 1 && weekComplete(person, w)) { n++; w--; }
+  return n;
+}
+function totalDone(person) {
+  return Object.keys(state.done[person] || {}).length;
+}
+
+function renderTraining() {
+  const p = state.profile;
+  const week = ui.trainingWeek ?? currentTrainingWeek();
+  ui.trainingWeek = week;
+  const start = addDays(parseIso(state.startDate), (week - 1) * 7);
+  const sessions = sessionsFor(p, week);
+  const required = sessions.filter((s) => !s.optional);
+  const doneReq = required.filter((s) => state.done[p][s.id]).length;
+  const pct = Math.round((doneReq / required.length) * 100);
+  const isCurrent = week === currentTrainingWeek();
+  const other = p === "rohat" ? "steffi" : "rohat";
+
+  return `
+    <div class="weeknav">
+      <button data-act="tweek" data-d="-1" ${week <= 1 ? "disabled" : ""} aria-label="Vorherige Woche">‹</button>
+      <div class="label"><strong>Woche ${week} von ${WEEKS}${week === 4 ? " · Entlastung" : ""}</strong>
+        <span>${fmtDate(start)} – ${fmtDate(addDays(start, 6))}${isCurrent ? " · aktuell" : ""}</span></div>
+      <button data-act="tweek" data-d="1" ${week >= WEEKS ? "disabled" : ""} aria-label="Nächste Woche">›</button>
+    </div>
+
+    <div class="card">
+      <div class="progress">
+        <div class="bar"><i style="width:${pct}%"></i></div>
+        <b>${doneReq}/${required.length}</b>
+      </div>
+      <div class="stats">
+        <div class="stat"><b>${streak(p)}</b><span>Wochen-Serie</span></div>
+        <div class="stat"><b>${totalDone(p)}</b><span>Einheiten gesamt</span></div>
+        <div class="stat"><b>${weekComplete(other, week) ? "✓" : "–"}</b><span>${PEOPLE[other]} diese Woche*</span></div>
+      </div>
+    </div>
+
+    <div class="section-title">Einheiten</div>
+    ${sessions.map((s) => sessionCard(p, s)).join("")}
+    <p class="hint">Optionale Einheiten zählen nicht für die Serie. Plane mindestens einen Ruhetag zwischen harten Einheiten.<br>
+    * Zeigt nur, was auf <em>diesem</em> iPhone abgehakt wurde.</p>`;
+}
+
+function sessionCard(p, s) {
+  const log = state.done[p][s.id];
+  const feelIcon = ["", "😫", "😕", "🙂", "😊", "💪"];
+  return `
+    <div class="card session ${log ? "done" : ""}">
+      <button class="check" data-act="toggle-session" data-id="${s.id}" aria-label="${log ? "Bestätigung zurücknehmen" : "Einheit bestätigen"}">${log ? "✓" : ""}</button>
+      <div class="body">
+        <div class="title">${esc(s.title)}</div>
+        <div class="meta">
+          <span class="tag ${s.type}">${{ lauf: "Laufen", reif: "Pamela Reif", studio: "Studio", cardio: "Cardio" }[s.type]}</span>
+          ${s.together ? '<span class="tag reif">gemeinsam</span>' : ""}
+          ${s.optional ? '<span class="tag">optional</span>' : ""}
+          <span>Vorschlag: ${s.day}</span>${s.minutes ? `<span>· ${s.minutes} Min</span>` : ""}
+        </div>
+        <div class="detail">${esc(s.detail)}</div>
+        ${s.exercises ? `<ul>${s.exercises.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}
+        ${log ? `<div class="logged">Erledigt am ${new Date(log.at).toLocaleDateString("de-DE")} ${feelIcon[log.feel] || ""}${log.note ? " · " + esc(log.note) : ""}</div>` : ""}
+        ${s.link ? `<div class="actions"><a class="btn small" href="${s.link}" target="_blank" rel="noopener">▶ Videos auf YouTube</a></div>` : ""}
+      </div>
+    </div>`;
+}
+
+function openConfirm(id) {
+  const p = state.profile;
+  const week = ui.trainingWeek;
+  const s = sessionsFor(p, week).find((x) => x.id === id);
+  let feel = 0;
+  openSheet(`Einheit bestätigen`, `
+    <p><b>${esc(s.title)}</b></p>
+    <p class="hint">Wie hat es sich angefühlt?</p>
+    <div class="feel">${["😫", "😕", "🙂", "😊", "💪"].map((f, i) => `<button data-feel="${i + 1}" aria-pressed="false">${f}</button>`).join("")}</div>
+    <p class="hint">Notiz (optional)</p>
+    <textarea id="c-note" placeholder="z. B. 5,2 km, Knie ok"></textarea>
+    <p><button class="btn primary block" id="c-save">Bestätigen</button></p>`);
+  const sheet = $("#sheet");
+  sheet.querySelectorAll("[data-feel]").forEach((b) =>
+    b.addEventListener("click", () => {
+      feel = +b.dataset.feel;
+      sheet.querySelectorAll("[data-feel]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    }));
+  $("#c-save", sheet).addEventListener("click", () => {
+    state.done[p][id] = { at: Date.now(), feel, note: $("#c-note", sheet).value.trim() };
+    save(); closeSheet(); render();
+    toast(weekComplete(p, week) ? "Woche geschafft! 🎉" : "Einheit bestätigt");
+  });
+}
+
+// ---------- Essen ----------
+function weekMeals(weekKey) {
+  if (!state.meals[weekKey]) state.meals[weekKey] = Object.fromEntries(DAYS.map((d) => [d, []]));
+  return state.meals[weekKey];
+}
+
+function renderEssen() {
+  const wk = ui.mealWeek;
+  const meals = weekMeals(wk);
+  const mon = parseIso(wk);
+  const planned = DAYS.reduce((n, d) => n + meals[d].length, 0);
+  return `
+    ${mealWeekNav(wk)}
+    <div class="btn-row">
+      <button class="btn" data-act="suggest">✨ Woche vorschlagen</button>
+      <button class="btn" data-act="browse">📖 Alle Rezepte</button>
+    </div>
+    ${DAYS.map((d, i) => {
+      const list = meals[d];
+      const kcal = list.reduce((s, m) => s + (recipeById(m.rid)?.kcal || 0), 0);
+      return `
+        <div class="card day">
+          <div class="day-head"><b>${d}, ${fmtDate(addDays(mon, i))}</b>
+            <span>${kcal ? `≈ ${kcal} kcal/Person` : ""}</span></div>
+          ${list.map((m, idx) => {
+            const r = recipeById(m.rid);
+            if (!r) return "";
+            return `
+              <div class="meal">
+                <div class="m-body">
+                  <button class="m-title" data-act="recipe" data-id="${r.id}">${esc(r.title)}</button>
+                  <div class="m-meta">${r.source} · ${r.kcal ? r.kcal + " kcal/Port." : "kcal k. A."}${r.minutes ? " · " + r.minutes + " Min" : ""}</div>
+                </div>
+                <div class="stepper" aria-label="Portionen">
+                  <button data-act="srv" data-day="${d}" data-idx="${idx}" data-d="-1" aria-label="Weniger Portionen">−</button>
+                  <span>${m.servings}</span>
+                  <button data-act="srv" data-day="${d}" data-idx="${idx}" data-d="1" aria-label="Mehr Portionen">+</button>
+                </div>
+                <button class="icon-btn" data-act="rm-meal" data-day="${d}" data-idx="${idx}" aria-label="Entfernen">✕</button>
+              </div>`;
+          }).join("")}
+          <button class="btn ghost small" data-act="add-meal" data-day="${d}">+ Gericht</button>
+        </div>`;
+    }).join("")}
+    ${planned ? `<button class="btn primary block" data-act="go-shop">🛒 Einkaufsliste für diese Woche</button>` : ""}
+    <p class="hint">Zahlen neben dem Gericht = Portionen. Zubereitung jeweils im Original-Rezept (Link im Rezept).</p>`;
+}
+
+function mealWeekNav(wk) {
+  const mon = parseIso(wk);
+  const thisWeek = iso(mondayOf(new Date()));
+  const label = wk === thisWeek ? "Diese Woche" : wk === iso(addDays(parseIso(thisWeek), 7)) ? "Nächste Woche" : "Woche";
+  return `
+    <div class="weeknav">
+      <button data-act="mweek" data-d="-7" aria-label="Vorherige Woche">‹</button>
+      <div class="label"><strong>${label}</strong><span>${fmtDate(mon)} – ${fmtDate(addDays(mon, 6))}</span></div>
+      <button data-act="mweek" data-d="7" aria-label="Nächste Woche">›</button>
+    </div>`;
+}
+
+function suggestWeek() {
+  const meals = weekMeals(ui.mealWeek);
+  const empty = DAYS.filter((d) => meals[d].length === 0);
+  if (!empty.length) { toast("Alle Tage sind schon belegt"); return; }
+  const used = new Set(DAYS.flatMap((d) => meals[d].map((m) => m.rid)));
+  const shuffle = (a) => a.map((x) => [Math.random(), x]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+  const veg = shuffle(RECIPES.filter((r) => isVeg(r) && !used.has(r.id)));
+  const rest = shuffle(RECIPES.filter((r) => !isVeg(r) && !used.has(r.id)));
+  // ca. 2/3 vegetarisch/vegan
+  empty.forEach((d, i) => {
+    const pickVeg = i % 3 !== 2;
+    const r = (pickVeg ? veg.shift() || rest.shift() : rest.shift() || veg.shift());
+    if (r) meals[d].push({ rid: r.id, servings: state.householdServings });
+  });
+  save(); render(); toast(`${empty.length} Tage gefüllt – einzeln änderbar`);
+}
+
+function recipeFilterFn(f) {
+  return {
+    alle: () => true,
+    veg: isVeg,
+    schnell: (r) => r.minutes && r.minutes <= 20,
+    leicht: (r) => r.kcal && r.kcal <= 400,
+    Alnatura: (r) => r.source === "Alnatura",
+    Henssler: (r) => r.source === "Henssler",
+  }[f];
+}
+
+function recipeListHtml(day) {
+  const filters = [["alle", "Alle"], ["veg", "Veggie/Vegan"], ["leicht", "≤ 400 kcal"], ["schnell", "≤ 20 Min"], ["Alnatura", "Alnatura"], ["Henssler", "Henssler"]];
+  const list = RECIPES.filter(recipeFilterFn(ui.recipeFilter));
+  return `
+    <div class="chips">${filters.map(([k, l]) => `<button data-filter="${k}" aria-pressed="${ui.recipeFilter === k}">${l}</button>`).join("")}</div>
+    ${list.map((r) => `
+      <button class="card recipe" data-pick="${r.id}">
+        <div class="r-title">${esc(r.title)}</div>
+        <div class="r-meta">
+          <span class="tag">${r.source}</span>
+          <span class="tag ${isVeg(r) ? "veg" : ""}">${DIET_LABEL[r.diet]}</span>
+          <span>${r.kcal ? r.kcal + " kcal" : "kcal k. A."}</span>${r.minutes ? `<span>· ${r.minutes} Min</span>` : ""}
+          ${day ? "" : "<span>›</span>"}
+        </div>
+      </button>`).join("") || '<p class="empty">Keine Treffer</p>'}`;
+}
+
+function openRecipePicker(day) {
+  const draw = () => {
+    openSheet(day ? `Gericht für ${day}` : "Rezepte", recipeListHtml(day));
+    const sheet = $("#sheet");
+    sheet.querySelectorAll("[data-filter]").forEach((b) =>
+      b.addEventListener("click", () => { ui.recipeFilter = b.dataset.filter; draw(); }));
+    sheet.querySelectorAll("[data-pick]").forEach((b) =>
+      b.addEventListener("click", () => {
+        if (day) {
+          weekMeals(ui.mealWeek)[day].push({ rid: b.dataset.pick, servings: state.householdServings });
+          save(); closeSheet(); render(); toast("Hinzugefügt");
+        } else openRecipe(b.dataset.pick);
+      }));
+  };
+  draw();
+}
+
+function openRecipe(id, servings) {
+  const r = recipeById(id);
+  const srv = servings || state.householdServings;
+  const f = srv / r.servings;
+  openSheet(r.title, `
+    <div class="r-meta recipe" style="margin-bottom:8px">
+      <span class="tag">${r.source}</span>
+      <span class="tag ${isVeg(r) ? "veg" : ""}">${DIET_LABEL[r.diet]}</span>
+      <span class="hint">${r.kcal ? r.kcal + " kcal/Portion" : "kcal nicht angegeben"}${r.minutes ? " · " + r.minutes + " Min" : ""}</span>
+    </div>
+    ${r.kcalNote ? `<div class="note">kcal: ${esc(r.kcalNote)}</div>` : ""}
+    ${r.note ? `<div class="note">${esc(r.note)}</div>` : ""}
+    <div class="section-title">Zutaten für ${srv} Portionen <span style="text-transform:none">(Original: ${r.servings})</span></div>
+    <div class="card list-group">
+      ${r.ingredients.map((i) => `<div class="ing"><span>${esc(i.name)}</span><span class="q">${esc(fmtAmount(scaleQty(i.qty, i.unit, f), i.unit))}</span></div>`).join("")}
+    </div>
+    <p><a class="btn primary block" href="${r.url}" target="_blank" rel="noopener">Zubereitung im Original (${r.source}) ↗</a></p>
+    <div class="section-title">Zum Plan hinzufügen (${mealWeekLabel()})</div>
+    <div class="chips">${DAYS.map((d) => `<button data-addday="${d}">${d}</button>`).join("")}</div>`);
+  $("#sheet").querySelectorAll("[data-addday]").forEach((b) =>
+    b.addEventListener("click", () => {
+      weekMeals(ui.mealWeek)[b.dataset.addday].push({ rid: id, servings: state.householdServings });
+      save(); closeSheet(); render(); toast(`Für ${b.dataset.addday} eingeplant`);
+    }));
+}
+const mealWeekLabel = () => `Woche ab ${fmtDate(parseIso(ui.mealWeek))}`;
+
+// ---------- Einkauf ----------
+function shopState(wk) {
+  if (!state.shopping[wk]) state.shopping[wk] = { checked: {}, pantry: {}, sent: {}, extra: [] };
+  return state.shopping[wk];
+}
+
+// Fasst alle Zutaten der Woche zusammen (gleicher Name + gleiche Einheit)
+function buildList(wk) {
+  const meals = weekMeals(wk);
+  const map = new Map();
+  for (const d of DAYS) {
+    for (const m of meals[d]) {
+      const r = recipeById(m.rid);
+      if (!r) continue;
+      const f = m.servings / r.servings;
+      for (const ing of r.ingredients) {
+        const key = (ing.name + "|" + ing.unit).toLowerCase();
+        const e = map.get(key) || { key, name: ing.name, unit: ing.unit, cat: ing.cat, qty: 0, unknown: false, from: new Set() };
+        const q = scaleQty(ing.qty, ing.unit, f);
+        if (q == null) e.unknown = true; else e.qty += q;
+        e.from.add(r.title);
+        map.set(key, e);
+      }
+    }
+  }
+  // Gekauft wird ganz: ½ Paprika → 1 Paprika
+  for (const e of map.values()) if (["Stk", "Bund", "Pck"].includes(e.unit)) e.qty = Math.ceil(e.qty - 1e-9);
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+function itemAmount(e) {
+  const parts = [];
+  if (e.qty) parts.push(`${fmtQty(e.qty)}${e.unit ? " " + e.unit : ""}`);
+  if (e.unknown) parts.push(e.qty ? "+ lt. Rezept" : "Menge lt. Rezept");
+  return parts.join(" ");
+}
+
+function renderEinkauf() {
+  const wk = ui.mealWeek;
+  const ss = shopState(wk);
+  const items = buildList(wk);
+  const pantry = items.filter((e) => e.cat === "gewuerz");
+  const main = items.filter((e) => e.cat !== "gewuerz" || ss.pantry[e.key]);
+  const cats = Object.keys(CATEGORIES);
+  const open = main.filter((e) => !ss.checked[e.key]).length + ss.extra.filter((x) => !x.checked).length;
+
+  const itemRow = (e) => `
+    <div class="item ${ss.checked[e.key] ? "checked" : ""}">
+      <input type="checkbox" id="i-${esc(e.key)}" data-check="${esc(e.key)}" ${ss.checked[e.key] ? "checked" : ""}>
+      <label for="i-${esc(e.key)}">${esc(e.name)} ${ss.sent[e.key] ? '<span class="sent">✓ in Erinnerungen</span>' : ""}
+        <span class="from">${esc([...e.from].join(", "))}</span></label>
+      <span class="qty">${esc(itemAmount(e))}</span>
+    </div>`;
+
+  if (!items.length && !ss.extra.length) {
+    return `${mealWeekNav(wk)}
+      <div class="empty">Für diese Woche sind noch keine Gerichte geplant.<br><br>
+      <button class="btn primary" data-act="tab" data-tab="essen">Zum Essensplan</button></div>
+      ${extraHtml(ss)}`;
+  }
+
+  return `
+    ${mealWeekNav(wk)}
+    <div class="card">
+      <b>${open} offene Artikel</b>
+      <p class="hint" style="margin:4px 0 10px">Überträgt alle offenen, noch nicht gesendeten Artikel in die geteilte Erinnerungen-Liste.</p>
+      <button class="btn primary block" data-act="send-reminders">📝 An Erinnerungen senden</button>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn small" data-act="share">Teilen / Kopieren</button>
+        <button class="btn small" data-act="resend">Alles erneut senden</button>
+      </div>
+    </div>
+    ${cats.map((c) => {
+      const list = main.filter((e) => e.cat === c);
+      if (!list.length) return "";
+      return `<div class="section-title">${CATEGORIES[c]}</div><div class="card list-group">${list.map(itemRow).join("")}</div>`;
+    }).join("")}
+    ${extraHtml(ss)}
+    ${pantry.length ? `
+      <div class="section-title">Vorrat prüfen</div>
+      <div class="card list-group">
+        <p class="hint" style="margin:8px 0">Gewürze, Öle, Saucen – meist vorhanden. Antippen, wenn es auf die Liste soll.</p>
+        ${pantry.map((e) => `
+          <div class="item">
+            <input type="checkbox" id="p-${esc(e.key)}" data-pantry="${esc(e.key)}" ${ss.pantry[e.key] ? "checked" : ""}>
+            <label for="p-${esc(e.key)}">${esc(e.name)}<span class="from">${esc([...e.from].join(", "))}</span></label>
+            <span class="qty">${esc(itemAmount(e))}</span>
+          </div>`).join("")}
+      </div>` : ""}
+    <p><button class="btn small danger" data-act="clear-checked">Abgehakte zurücksetzen</button></p>`;
+}
+
+function extraHtml(ss) {
+  return `
+    <div class="section-title">Eigene Artikel</div>
+    <div class="card list-group">
+      ${ss.extra.map((x) => `
+        <div class="item ${x.checked ? "checked" : ""}">
+          <input type="checkbox" id="x-${x.id}" data-xcheck="${x.id}" ${x.checked ? "checked" : ""}>
+          <label for="x-${x.id}">${esc(x.name)} ${x.sent ? '<span class="sent">✓ in Erinnerungen</span>' : ""}</label>
+          <button class="icon-btn" data-act="rm-extra" data-id="${x.id}" aria-label="Entfernen">✕</button>
+        </div>`).join("")}
+      <form class="add-row" data-form="extra" style="padding:10px 0">
+        <input type="text" name="artikel" placeholder="z. B. Haferflocken, Bananen" autocomplete="off" enterkeyhint="done">
+        <button class="btn primary" type="submit">+</button>
+      </form>
+    </div>`;
+}
+
+function openItems(wk, includeSent) {
+  const ss = shopState(wk);
+  const items = buildList(wk).filter((e) => (e.cat !== "gewuerz" || ss.pantry[e.key]) && !ss.checked[e.key]);
+  const lines = [];
+  const keys = [];
+  for (const e of items) {
+    if (!includeSent && ss.sent[e.key]) continue;
+    const amt = itemAmount(e);
+    lines.push(amt ? `${e.name} – ${amt}` : e.name);
+    keys.push(["i", e.key]);
+  }
+  for (const x of ss.extra) {
+    if (x.checked || (!includeSent && x.sent)) continue;
+    lines.push(x.name);
+    keys.push(["x", x.id]);
+  }
+  return { lines, keys };
+}
+
+function sendToReminders(includeSent) {
+  const wk = ui.mealWeek;
+  const { lines, keys } = openItems(wk, includeSent);
+  if (!lines.length) { toast(includeSent ? "Keine offenen Artikel" : "Alles schon gesendet"); return; }
+  const ss = shopState(wk);
+  for (const [t, k] of keys) {
+    if (t === "i") ss.sent[k] = true;
+    else { const x = ss.extra.find((y) => y.id === k); if (x) x.sent = true; }
+  }
+  save();
+  const url = "shortcuts://run-shortcut?name=" + encodeURIComponent(state.shortcutName) +
+    "&input=text&text=" + encodeURIComponent(lines.join("\n"));
+  window.location.href = url;
+  setTimeout(render, 500);
+}
+
+async function shareList() {
+  const { lines } = openItems(ui.mealWeek, true);
+  if (!lines.length) { toast("Keine offenen Artikel"); return; }
+  const text = "Einkaufsliste " + mealWeekLabel() + "\n\n" + lines.map((l) => "• " + l).join("\n");
+  try {
+    if (navigator.share) { await navigator.share({ text }); return; }
+  } catch (e) { if (e.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(text); toast("In die Zwischenablage kopiert"); }
+  catch (e) { toast("Teilen nicht möglich"); }
+}
+
+// ---------- Mehr ----------
+function renderMehr() {
+  return `
+    <div class="section-title">Trainingsplan</div>
+    <div class="card">
+      <label class="hint" for="s-start">Start (Montag der Woche 1)</label>
+      <input type="date" id="s-start" value="${state.startDate}">
+      <p class="hint">Aktuell: Woche ${currentTrainingWeek()} von ${WEEKS}. Das Datum wird automatisch auf den Montag gesetzt.</p>
+    </div>
+
+    <div class="section-title">Essen</div>
+    <div class="card">
+      <label class="hint" for="s-srv">Standard-Portionen pro Gericht</label>
+      <select id="s-srv">${[1, 2, 3, 4, 6].map((n) => `<option ${n === state.householdServings ? "selected" : ""}>${n}</option>`).join("")}</select>
+    </div>
+
+    <div class="section-title">Erinnerungen (iCloud) einrichten</div>
+    <div class="card">
+      <p class="hint" style="margin-top:0">Einmalig auf dem iPhone, von dem aus gesendet wird. Die App übergibt die Liste an einen Kurzbefehl, der jeden Artikel als eigene Erinnerung anlegt.</p>
+      <ol class="steps">
+        <li>In <b>Erinnerungen</b> eine Liste <b>„Einkauf“</b> anlegen (Listentyp „Einkaufsliste“ sortiert automatisch nach Rubriken).</li>
+        <li>Liste öffnen → <b>Teilen</b> → Steffi einladen. Ab dann synchronisiert iCloud die Liste.</li>
+        <li>App <b>Kurzbefehle</b> → <b>+</b> → Name exakt: <b>${esc(state.shortcutName)}</b></li>
+        <li>Aktion <b>„Text teilen“</b> hinzufügen → Eingabe: <b>Kurzbefehleingabe</b>, Trennen bei: <b>Neue Zeilen</b>.</li>
+        <li>Aktion <b>„Wiederholen mit jedem Objekt“</b> → in <b>Geteilter Text</b>.</li>
+        <li>Innerhalb der Schleife: <b>„Erinnerung hinzufügen“</b> → Text: <b>Wiederholungsobjekt</b>, Liste: <b>Einkauf</b>.</li>
+        <li>Fertig. Beim ersten Senden fragt iOS einmal nach Erlaubnis.</li>
+      </ol>
+      <label class="hint" for="s-sc">Name des Kurzbefehls</label>
+      <input type="text" id="s-sc" value="${esc(state.shortcutName)}">
+      <p><button class="btn small" data-act="test-shortcut">Test senden</button></p>
+    </div>
+
+    <div class="section-title">Daten</div>
+    <div class="card">
+      <p class="hint" style="margin-top:0">Alles wird nur auf diesem iPhone gespeichert. Sicherung als Datei, z. B. in iCloud Drive:</p>
+      <div class="btn-row">
+        <button class="btn small" data-act="export">Sicherung exportieren</button>
+        <label class="btn small">Sicherung laden<input type="file" id="s-import" accept="application/json" hidden></label>
+      </div>
+    </div>
+
+    <div class="section-title">Installation</div>
+    <div class="card"><p class="hint" style="margin:0">In Safari öffnen → Teilen-Symbol → <b>„Zum Home-Bildschirm“</b>. Danach startet die App im Vollbild und funktioniert offline.</p></div>
+
+    <p class="hint">Rezepte: Alnatura (alnatura.de) und Steffen Henssler (henssler.shop). Zutaten und kcal laut Originalseite, Zubereitung bitte im Original. Workouts: Pamela Reif auf YouTube.</p>`;
+}
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `get-in-shape-${iso(new Date())}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data.done || !data.meals) throw new Error("Format");
+      if (!confirm("Aktuelle Daten durch die Sicherung ersetzen?")) return;
+      state = { ...defaultState(), ...data };
+      save(); render(); toast("Sicherung geladen");
+    } catch (e) { toast("Datei ist keine gültige Sicherung"); }
+  };
+  reader.readAsText(file);
+}
+
+// ---------- Sheet ----------
+function openSheet(title, html) {
+  const sheet = $("#sheet");
+  sheet.innerHTML = `
+    <div class="sheet-head"><h2>${esc(title)}</h2><button class="btn small" data-close>Fertig</button></div>
+    <div class="sheet-body">${html}</div>`;
+  $("[data-close]", sheet).addEventListener("click", closeSheet);
+  if (!sheet.open) sheet.showModal();
+}
+function closeSheet() { const s = $("#sheet"); if (s.open) s.close(); }
+$("#sheet").addEventListener("click", (e) => { if (e.target.id === "sheet") closeSheet(); });
+
+// ---------- Rendering & Events ----------
+const TITLES = { training: "Training", essen: "Essen", einkauf: "Einkauf", mehr: "Mehr" };
+function render() {
+  $("#view-title").textContent = TITLES[ui.tab];
+  document.querySelector(".profile-switch").hidden = ui.tab !== "training";
+  document.querySelectorAll(".profile-switch button").forEach((b) =>
+    b.setAttribute("aria-selected", b.dataset.profile === state.profile));
+  document.querySelectorAll(".tabbar button").forEach((b) => {
+    if (b.dataset.tab === ui.tab) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+  const v = $("#view");
+  v.innerHTML = { training: renderTraining, essen: renderEssen, einkauf: renderEinkauf, mehr: renderMehr }[ui.tab]();
+}
+
+function setTab(t) { ui.tab = t; render(); window.scrollTo(0, 0); }
+
+document.querySelector(".tabbar").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-tab]"); if (b) setTab(b.dataset.tab);
+});
+document.querySelector(".profile-switch").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-profile]"); if (!b) return;
+  state.profile = b.dataset.profile; save(); render();
+});
+
+const view = $("#view");
+view.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const act = b.dataset.act;
+  const wk = ui.mealWeek;
+  switch (act) {
+    case "tweek": ui.trainingWeek = Math.min(WEEKS, Math.max(1, ui.trainingWeek + +b.dataset.d)); render(); break;
+    case "toggle-session": {
+      const id = b.dataset.id;
+      if (state.done[state.profile][id]) {
+        if (confirm("Bestätigung dieser Einheit zurücknehmen?")) { delete state.done[state.profile][id]; save(); render(); }
+      } else openConfirm(id);
+      break;
+    }
+    case "mweek": ui.mealWeek = iso(addDays(parseIso(wk), +b.dataset.d)); render(); break;
+    case "suggest": suggestWeek(); break;
+    case "browse": openRecipePicker(null); break;
+    case "add-meal": openRecipePicker(b.dataset.day); break;
+    case "recipe": openRecipe(b.dataset.id); break;
+    case "srv": {
+      const m = weekMeals(wk)[b.dataset.day][+b.dataset.idx];
+      m.servings = Math.max(1, Math.min(12, m.servings + +b.dataset.d)); save(); render(); break;
+    }
+    case "rm-meal": weekMeals(wk)[b.dataset.day].splice(+b.dataset.idx, 1); save(); render(); break;
+    case "go-shop": setTab("einkauf"); break;
+    case "tab": setTab(b.dataset.tab); break;
+    case "send-reminders": sendToReminders(false); break;
+    case "resend": sendToReminders(true); break;
+    case "share": shareList(); break;
+    case "clear-checked":
+      if (confirm("Alle Haken dieser Woche zurücksetzen?")) {
+        const ss = shopState(wk); ss.checked = {}; ss.extra.forEach((x) => (x.checked = false)); save(); render();
+      }
+      break;
+    case "rm-extra": {
+      const ss = shopState(wk); const x = ss.extra.find((y) => y.id === b.dataset.id);
+      if (x && confirm(`„${x.name}“ entfernen?`)) { ss.extra = ss.extra.filter((y) => y !== x); save(); render(); }
+      break;
+    }
+    case "test-shortcut":
+      window.location.href = "shortcuts://run-shortcut?name=" + encodeURIComponent(state.shortcutName) +
+        "&input=text&text=" + encodeURIComponent("Test aus Get in Shape");
+      break;
+    case "export": exportData(); break;
+  }
+});
+
+view.addEventListener("change", (e) => {
+  const t = e.target;
+  const ss = shopState(ui.mealWeek);
+  if (t.dataset.check) { ss.checked[t.dataset.check] = t.checked; if (!t.checked) delete ss.checked[t.dataset.check]; save(); render(); }
+  else if (t.dataset.pantry) { if (t.checked) ss.pantry[t.dataset.pantry] = true; else delete ss.pantry[t.dataset.pantry]; save(); render(); }
+  else if (t.dataset.xcheck) { const x = ss.extra.find((y) => y.id === t.dataset.xcheck); if (x) x.checked = t.checked; save(); render(); }
+  else if (t.id === "s-start" && t.value) { state.startDate = iso(mondayOf(parseIso(t.value))); ui.trainingWeek = null; save(); render(); toast("Startdatum gespeichert"); }
+  else if (t.id === "s-srv") { state.householdServings = +t.value; save(); }
+  else if (t.id === "s-sc") { state.shortcutName = t.value.trim() || defaultState().shortcutName; save(); render(); }
+  else if (t.id === "s-import" && t.files[0]) importData(t.files[0]);
+});
+
+view.addEventListener("submit", (e) => {
+  const f = e.target.closest("[data-form='extra']"); if (!f) return;
+  e.preventDefault();
+  const name = f.elements.artikel.value.trim(); if (!name) return;
+  shopState(ui.mealWeek).extra.push({ id: Date.now().toString(36), name, checked: false });
+  save(); render();
+  $("[data-form='extra'] input", view)?.focus();
+});
+
+render();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
