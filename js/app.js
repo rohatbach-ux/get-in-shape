@@ -352,11 +352,13 @@ function activityCard(p, c) {
   const lastWeek = !dates.some((d) => h.days[d]);
   if (lastWeek) dates = Array.from({ length: 7 }, (_, i) => iso(addDays(new Date(), -i)));
   const days = dates.map((d) => h.days[d]).filter(Boolean);
-  const avg = (f) => { const v = days.map((d) => d[f]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-  const steps = avg("steps"), active = avg("active"), dist = avg("distance"), exercise = avg("exercise");
+  // Tage ohne Uhr: Ruheenergie fehlt oder ist 0 („Fehlende ausfüllen“) → nicht in kcal/Trainingsminuten mitteln
+  const worn = days.some((d) => d.basal >= 500) ? days.filter((d) => d.basal >= 500) : days;
+  const avg = (f, list = days) => { const v = list.map((d) => d[f]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const steps = avg("steps"), active = avg("active", worn), dist = avg("distance"), exercise = avg("exercise", worn);
   const trainDays = days.filter((d) => d.exercise >= MIN_EXERCISE).length;
   // Ruheenergie unter 500 kcal/Tag ist unplausibel (z. B. falsch beschriftete km) → ignorieren
-  const basalRaw = avg("basal"), basal = basalRaw != null && basalRaw >= 500 ? basalRaw : null;
+  const basalRaw = avg("basal", worn), basal = basalRaw != null && basalRaw >= 500 ? basalRaw : null;
   const total = active != null && basal != null ? active + basal : null;
   const ws = weekWorkouts(p, c);
   const runs = ws.concat(weekEstimates(p, c)).filter((w) => (w.cat || workoutCategory(w.type)) === "lauf");

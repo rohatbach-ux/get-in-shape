@@ -66,11 +66,16 @@ function parseKm(raw) {
   return /\bm\b/.test(s) && !/km/.test(s) ? n / 1000 : n;
 }
 
-const DAY_FIELD = {
-  SCHRITTE: "steps", STEPS: "steps", AKTIV: "active", ACTIVE: "active", RUHE: "basal", BASAL: "basal",
-  DISTANZ: "distance", DISTANCE: "distance",
-  TRAININGSMINUTEN: "exercise", TRAINING: "exercise", TRAININGSZEIT: "exercise", EXERCISE: "exercise", EXERCISEMINUTES: "exercise",
-};
+// Tageswerte: Kennung wird über ihren Anfang erkannt, damit auch
+// RUHEKALORIEN, AKTIVKALORIEN, SCHRITTZAHL, TRAININGSMINUTEN usw. passen.
+const DAY_PREFIX = [
+  ["SCHRITT", "steps"], ["STEP", "steps"],
+  ["AKTIV", "active"], ["ACTIVE", "active"],
+  ["RUHE", "basal"], ["BASAL", "basal"], ["RESTING", "basal"],
+  ["DISTANZ", "distance"], ["DISTANCE", "distance"],
+  ["TRAINING", "exercise"], ["EXERCISE", "exercise"],
+];
+const dayField = (kind) => DAY_PREFIX.find(([pre]) => kind.startsWith(pre))?.[1];
 const parseDayValue = (field, raw) => (field === "distance" ? parseKm(raw) : field === "exercise" ? parseMinutes(raw) : parseNumber(raw));
 
 export function parseHealthText(text) {
@@ -87,8 +92,8 @@ export function parseHealthText(text) {
       const kg = parseNumber(parts[2]);
       if (kg && kg > 30 && kg < 300) out.weights.push({ date, time, kg: Math.round(kg * 10) / 10 });
       else skip(line);
-    } else if (DAY_FIELD[kind]) {
-      const field = DAY_FIELD[kind];
+    } else if (dayField(kind)) {
+      const field = dayField(kind);
       const v = parseDayValue(field, parts[2]);
       if (v == null) { skip(line); continue; }
       const d = (out.days[date] ||= {});
