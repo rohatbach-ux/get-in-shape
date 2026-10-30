@@ -1,5 +1,5 @@
 // Offline-Cache für die App-Dateien. Bei Änderungen VERSION erhöhen.
-const VERSION = "gis-v5";
+const VERSION = "gis-v6";
 const FILES = [
   "./",
   "index.html",
@@ -8,6 +8,7 @@ const FILES = [
   "js/recipes.js",
   "js/training.js",
   "js/exercises.js",
+  "js/health.js",
   "manifest.webmanifest",
   "icons/icon.svg",
   "icons/apple-touch-icon.png",

@@ -1,6 +1,7 @@
 import { RECIPES, CATEGORIES, DIET_LABEL, SEASONS, KAIA_LABEL, quarterOf, activeRecipes } from "./recipes.js";
 import { WEEKS, GOAL_WEEK, PLAN_START, PLAN_VERSION, sessionsFor, weekLabel, PEOPLE } from "./training.js";
 import { EXERCISES, illustration } from "./exercises.js";
+import { parseHealthText, matchWorkouts, workoutCategory, fmtWorkout } from "./health.js";
 
 // ---------- Speicher ----------
 const KEY = "gis-state-v1";
@@ -31,6 +32,9 @@ function defaultState() {
     householdServings: 2,
     weights: { rohat: [], steffi: [] },        // [{ date: "YYYY-MM-DD", kg }]
     weightGoal: { rohat: 85, steffi: null },
+    // Apple Health (über Kurzbefehl): Tageswerte, Workouts, letzter Abgleich
+    health: { rohat: { days: {}, workouts: [], lastSync: null }, steffi: { days: {}, workouts: [], lastSync: null } },
+    healthShortcutName: "Health an Get in Shape",
   };
 }
 
@@ -191,9 +195,10 @@ function renderTraining() {
     </div>
 
     ${weightCard(p)}
+    ${activityCard(p, c)}
 
     <div class="section-title">Einheiten</div>
-    ${sessions.map((s) => sessionCard(p, c, s)).join("")}
+    ${(() => { const hs = healthSuggestions(p, c); return sessions.map((s) => sessionCard(p, c, s, hs[s.id])).join(""); })()}
     ${isCurrent ? `<div class="btn-stack"><button class="btn block" data-act="repeat-week">${icon("repeat")}Diese Woche nächste Woche wiederholen</button></div>` : ""}
     <p class="hint mt-4">Optionale Einheiten zählen nicht für die Serie.${p === "rohat" ? " Knie-Regel: Schmerz, Schwellung oder Wegknick-Gefühl → Pause und Woche wiederholen." : ""}<br>
     * Zeigt nur, was auf <em>diesem</em> iPhone abgehakt wurde.</p>`;
@@ -300,6 +305,110 @@ function openWeightSheet() {
   }));
 }
 
+// ---------- Apple Health ----------
+const healthOf = (p) => state.health[p] || (state.health[p] = { days: {}, workouts: [], lastSync: null });
+const weekdayOf = (d) => (parseIso(d).getDay() + 6) % 7;
+const fmtInt = (n) => Math.round(n).toLocaleString("de-DE");
+
+function weekWorkouts(p, c) {
+  const start = addDays(parseIso(state.startDate), (c - 1) * 7);
+  const from = iso(start), to = iso(addDays(start, 6));
+  return healthOf(p).workouts.filter((w) => w.date >= from && w.date <= to);
+}
+function healthSuggestions(p, c) {
+  const w = planSeq(p)[c - 1];
+  const used = new Set(Object.values(state.done[p]).map((l) => l.healthKey).filter(Boolean));
+  const ws = weekWorkouts(p, c).filter((x) => !used.has(x.key));
+  if (!w || !ws.length) return {};
+  return matchWorkouts(sessionsFor(p, w), ws, (id) => !isDone(p, c, id), weekdayOf);
+}
+
+function activityCard(p, c) {
+  const h = healthOf(p);
+  const hasData = h.lastSync || h.workouts.length || Object.keys(h.days).length;
+  if (!hasData && p !== "rohat") return "";
+  if (!hasData) {
+    return `<div class="card activity">
+      <div class="w-head"><b>Apple Health</b></div>
+      <p class="hint mt-2">Gewicht, Workouts, Schritte und Kalorien automatisch übernehmen – einmalig den Kurzbefehl unter <b>Mehr</b> einrichten.</p>
+      <button class="btn block" data-act="health-sync">${icon("repeat")}Health abgleichen</button>
+    </div>`;
+  }
+  const start = addDays(parseIso(state.startDate), (c - 1) * 7);
+  const dates = Array.from({ length: 7 }, (_, i) => iso(addDays(start, i))).filter((d) => d <= iso(new Date()));
+  const days = dates.map((d) => h.days[d]).filter(Boolean);
+  const avg = (f) => { const v = days.map((d) => d[f]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const steps = avg("steps"), active = avg("active"), basal = avg("basal");
+  const total = active != null && basal != null ? active + basal : null;
+  const ws = weekWorkouts(p, c);
+  const runKm = ws.filter((w) => workoutCategory(w.type) === "lauf").reduce((a, w) => a + (w.km || 0), 0);
+  return `<div class="card activity">
+    <div class="w-head"><b>Aktivität (Apple Health)</b><button class="btn ghost small" data-act="health-sync">${icon("repeat", "sm")}Abgleichen</button></div>
+    <div class="stats w-stats">
+      <div class="stat"><b>${steps != null ? fmtInt(steps) : "–"}</b><span>Ø Schritte</span></div>
+      <div class="stat"><b>${active != null ? fmtInt(active) : "–"}</b><span>Ø aktive kcal</span></div>
+      <div class="stat"><b>${runKm ? runKm.toLocaleString("de-DE", { maximumFractionDigits: 1 }) : "0"}</b><span>km gelaufen</span></div>
+    </div>
+    ${total != null ? `<p class="hint mt-4">Ø Verbrauch <b>${fmtInt(total)} kcal/Tag</b> (aktiv + Ruhe). Richtwert fürs Abnehmen: ca. <b>${fmtInt(Math.max(1500, total - 600))} kcal</b> essen (≈ 600 kcal Defizit).</p>` : ""}
+    ${steps != null && steps < 8000 ? `<p class="hint">Schrittziel 8.000–10.000 – noch ${fmtInt(8000 - steps)} pro Tag bis zur Untergrenze.</p>` : ""}
+    <p class="hint">${ws.length} Workout${ws.length === 1 ? "" : "s"} diese Woche · letzter Abgleich ${h.lastSync ? new Date(h.lastSync).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–"}</p>
+  </div>`;
+}
+
+function runHealthShortcut() {
+  ui.awaitHealth = true;
+  window.location.href = "shortcuts://run-shortcut?name=" + encodeURIComponent(state.healthShortcutName);
+}
+
+function importHealth(text) {
+  const p = state.profile;
+  const data = parseHealthText(text);
+  const h = healthOf(p);
+  // Gewicht: pro Tag die früheste Messung (morgens)
+  const byDay = {};
+  for (const w of data.weights.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))) byDay[w.date] ||= w;
+  const wList = Object.values(byDay);
+  state.weights[p] = (state.weights[p] || []).filter((e) => !byDay[e.date]).concat(wList.map((w) => ({ date: w.date, kg: w.kg, src: "health" })));
+  for (const [d, v] of Object.entries(data.days)) h.days[d] = { ...h.days[d], ...v };
+  const keys = new Set(h.workouts.map((w) => w.key));
+  const newW = data.workouts.filter((w) => !keys.has(w.key));
+  h.workouts = h.workouts.concat(newW).sort((a, b) => a.key.localeCompare(b.key));
+  const found = wList.length + Object.keys(data.days).length + data.workouts.length;
+  if (found) h.lastSync = Date.now();
+  save(); render();
+  return { weights: wList.length, days: Object.keys(data.days).length, workouts: data.workouts.length, newWorkouts: newW.length, skipped: data.skipped, found };
+}
+
+function openHealthImport() {
+  openSheet("Health-Daten übernehmen", `
+    <p class="hint tight">Der Kurzbefehl hat die Daten in die Zwischenablage gelegt. Ein Tippen genügt – iOS fragt dann einmal „Einsetzen“.</p>
+    <button class="btn primary block" id="h-paste">${icon("list")}Aus Zwischenablage einsetzen</button>
+    <div id="h-result"></div>
+    <details class="mt-4"><summary class="hint">Falls das nicht klappt: Text manuell einfügen</summary>
+      <textarea id="h-text" class="mt-2" placeholder="GEWICHT;2026-11-12;104,6"></textarea>
+      <button class="btn block" id="h-manual">Übernehmen</button>
+    </details>
+    <div class="btn-stack"><button class="btn ghost" id="h-run">${icon("repeat", "sm")}Kurzbefehl erneut starten</button></div>`);
+  const sheet = $("#sheet");
+  const show = (text) => {
+    const r = importHealth(text);
+    $("#h-result", sheet).innerHTML = r.found
+      ? `<div class="callout mt-4">${icon("check")}<div class="c-body"><b>Übernommen:</b> ${r.weights} Gewichtswert${r.weights === 1 ? "" : "e"}, ${r.days} ${r.days === 1 ? "Tag" : "Tage"} mit Schritten/kcal, ${r.workouts} Workout${r.workouts === 1 ? "" : "s"} (${r.newWorkouts} neu).${r.skipped ? ` ${r.skipped} Zeilen nicht erkannt.` : ""}<br>Passende Workouts erscheinen jetzt bei den Einheiten zum Übernehmen.</div></div>`
+      : `<div class="callout danger mt-4">${icon("alert")}<div class="c-body">Keine Health-Daten erkannt. Ist der Kurzbefehl vollständig durchgelaufen?</div></div>`;
+  };
+  $("#h-paste", sheet).addEventListener("click", async () => {
+    try { show(await navigator.clipboard.readText()); }
+    catch (e) { toast("Zwischenablage nicht lesbar – Text unten einfügen"); sheet.querySelector("details").open = true; }
+  });
+  $("#h-manual", sheet).addEventListener("click", () => show($("#h-text", sheet).value));
+  $("#h-run", sheet).addEventListener("click", () => { closeSheet(); runHealthShortcut(); });
+}
+
+// Nach dem Kurzbefehl zurück in der App → Übernehmen anbieten
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && ui.awaitHealth) { ui.awaitHealth = false; openHealthImport(); }
+});
+
 const TYPE_LABEL = { lauf: "Laufen", reif: "Pamela Reif", studio: "Studio", cardio: "Cardio", kraft: "Kraft" };
 const KNEE = { ok: "Knie ok", light: "Knie leicht spürbar", pain: "Knie: Schmerz/Schwellung" };
 const KNEE_ICON = { ok: '<span class="knee-dot ok"></span>', light: '<span class="knee-dot light"></span>', pain: '<span class="knee-dot pain"></span>' };
@@ -312,7 +421,7 @@ function exerciseList(exs) {
   }).join("")}</ul>`;
 }
 
-function sessionCard(p, c, s) {
+function sessionCard(p, c, s, hw) {
   const log = isDone(p, c, s.id);
   const feelIcon = ["", "😫", "😕", "🙂", "😊", "💪"];
   return `
@@ -329,6 +438,7 @@ function sessionCard(p, c, s) {
         <div class="detail">${esc(s.detail)}</div>
         ${s.exercises ? exerciseList(s.exercises) : ""}
         ${log ? `<div class="logged">${icon("check", "sm")}<span>Erledigt am ${new Date(log.at).toLocaleDateString("de-DE")} ${feelIcon[log.feel] || ""}</span>${log.knee ? `<span class="${log.knee === "pain" ? "knee-pain" : ""}">${KNEE_ICON[log.knee]} ${KNEE[log.knee]}</span>` : ""}${log.note ? `<span>${esc(log.note)}</span>` : ""}</div>` : ""}
+        ${!log && hw ? `<div class="health-hint">${icon("activity", "sm")}<span>Health: ${DAYS[weekdayOf(hw.date)]} ${fmtDate(parseIso(hw.date))} · ${esc(fmtWorkout(hw))}</span><button class="btn small" data-act="health-take" data-id="${s.id}">Übernehmen</button></div>` : ""}
         ${s.link ? `<div class="actions"><a class="btn small" href="${s.link}" target="_blank" rel="noopener">${icon("play", "sm fill")}Videos auf YouTube</a></div>` : ""}
       </div>
     </div>`;
@@ -369,7 +479,7 @@ function repeatWeek() {
   toast(`Woche ${w} wird wiederholt`);
 }
 
-function openConfirm(id) {
+function openConfirm(id, hw) {
   const p = state.profile;
   const c = ui.trainingCal;
   const s = sessionsFor(p, planSeq(p)[c - 1]).find((x) => x.id === id);
@@ -383,7 +493,7 @@ function openConfirm(id) {
       <span class="field-label">Knie-Check (während und nach der Einheit)</span>
       <div class="choice three">${Object.keys(KNEE).map((k) => `<button data-knee="${k}" aria-pressed="false">${KNEE_ICON[k]}${{ ok: "ok", light: "leicht spürbar", pain: "Schmerz / Schwellung" }[k]}</button>`).join("")}</div>` : ""}
     <label class="field-label" for="c-note">Notiz (optional)</label>
-    <textarea id="c-note" placeholder="${s.km ? `z. B. ${s.km} km in 45 Min` : "z. B. alles gut"}"></textarea>
+    <textarea id="c-note" placeholder="${s.km ? `z. B. ${s.km} km in 45 Min` : "z. B. alles gut"}">${hw ? esc(fmtWorkout(hw) + " (Apple Health)") : ""}</textarea>
     <button class="btn primary block" id="c-save">Bestätigen</button>`);
   const sheet = $("#sheet");
   const pick = (attr, set) => sheet.querySelectorAll(`[data-${attr}]`).forEach((b) =>
@@ -394,7 +504,7 @@ function openConfirm(id) {
   pick("feel", (v) => (feel = +v));
   pick("knee", (v) => (knee = v));
   $("#c-save", sheet).addEventListener("click", () => {
-    state.done[p][doneKey(c, id)] = { at: Date.now(), feel, knee, note: $("#c-note", sheet).value.trim() };
+    state.done[p][doneKey(c, id)] = { at: hw ? new Date(hw.date + "T12:00").getTime() : Date.now(), feel, knee, note: $("#c-note", sheet).value.trim(), ...(hw ? { healthKey: hw.key } : {}) };
     save(); closeSheet(); render();
     if (knee === "pain") openKneeAdvice(c);
     else if (knee === "light") toast("Beobachten: wird es stärker → Pause machen");
@@ -782,6 +892,24 @@ function renderMehr() {
       <div class="btn-stack"><button class="btn block" data-act="test-shortcut">Test senden</button></div>
     </div>
 
+    <div class="section-title">Apple Health einrichten</div>
+    <div class="card">
+      <p class="hint">Einmalig auf deinem iPhone. Der Kurzbefehl liest die letzten 14 Tage aus Health und legt sie in die Zwischenablage; „Health abgleichen“ im Training startet ihn.</p>
+      <ol class="steps">
+        <li>Kurzbefehle → <b>+</b> → Name exakt: <b>${esc(state.healthShortcutName)}</b></li>
+        <li>Pro Datenart ein Block: <b>„Health-Samples suchen“</b> (letzte 14 Tage) → <b>„Wiederholen mit jedem Objekt“</b> → <b>„Text“</b> mit Kennung, Startdatum (ISO 8601) und Wert → <b>„Zu Variable hinzufügen“</b> (Name <b>Export</b>).</li>
+        <li>Kennungen: <b>GEWICHT</b>, <b>SCHRITTE</b>, <b>AKTIV</b>, <b>RUHE</b>, <b>DISTANZ</b> (Tageswerte: „Gruppieren nach Tag“) und <b>WORKOUT</b> (Typ;Dauer;Distanz;Energie).</li>
+        <li>Am Ende: <b>„Text kombinieren“</b> (Export, Neue Zeilen) → <b>„In Zwischenablage kopieren“</b>.</li>
+        <li>Zurück in die App wechseln → <b>„Aus Zwischenablage einsetzen“</b>.</li>
+      </ol>
+      <label class="field-label" for="s-hsc">Name des Kurzbefehls</label>
+      <input type="text" id="s-hsc" value="${esc(state.healthShortcutName)}">
+      <div class="btn-stack">
+        <button class="btn block" data-act="health-sync">${icon("repeat")}Health abgleichen</button>
+        <button class="btn ghost" data-act="health-import">Daten manuell einfügen</button>
+      </div>
+    </div>
+
     <div class="section-title">Daten</div>
     <div class="card">
       <p class="hint">Alles wird nur auf diesem iPhone gespeichert. Sicherung als Datei, z. B. in iCloud Drive:</p>
@@ -864,6 +992,9 @@ view.addEventListener("click", (e) => {
     case "tweek": ui.trainingCal = clampCal(state.profile, ui.trainingCal + +b.dataset.d); render(); break;
     case "exercise": openExercise(b.dataset.id, b.dataset.dose); break;
     case "weight-add": openWeightSheet(); break;
+    case "health-sync": runHealthShortcut(); break;
+    case "health-import": openHealthImport(); break;
+    case "health-take": openConfirm(b.dataset.id, healthSuggestions(state.profile, ui.trainingCal)[b.dataset.id]); break;
     case "repeat-week": repeatWeek(); break;
     case "reset-repeats":
       if (confirm("Alle Wochen-Wiederholungen zurücknehmen? Abgehakte Einheiten bleiben gespeichert.")) {
@@ -919,6 +1050,7 @@ view.addEventListener("change", (e) => {
   else if (t.dataset.xcheck) { const x = ss.extra.find((y) => y.id === t.dataset.xcheck); if (x) x.checked = t.checked; save(); render(); }
   else if (t.id === "s-start" && t.value) { state.startDate = iso(mondayOf(parseIso(t.value))); ui.trainingCal = null; save(); render(); toast("Startdatum gespeichert"); }
   else if (t.id === "s-srv") { state.householdServings = +t.value; save(); }
+  else if (t.id === "s-hsc") { state.healthShortcutName = t.value.trim() || defaultState().healthShortcutName; save(); render(); }
   else if (t.id === "s-sc") { state.shortcutName = t.value.trim() || defaultState().shortcutName; save(); render(); }
   else if (t.id === "s-import" && t.files[0]) importData(t.files[0]);
 });

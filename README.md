@@ -15,6 +15,7 @@ Web-App (PWA) für das iPhone: Trainingspläne für Rohat und Steffi mit Gewicht
 - **Essen:** 60 Gerichte im Angebot – 40 ganzjährige und 20 saisonale, die zum Quartalswechsel (1.1., 1.4., 1.7., 1.10.) automatisch wechseln. Insgesamt 120 Rezepte, alle mit Quelle, kcal pro Portion und Zubereitungszeit. Auswahl auf Abnehmen ausgerichtet: ca. 550 kcal pro Portion als Obergrenze und mindestens ⅔ vegetarisch oder vegan. Keine Garnelen.
   - Jedes Gericht ist für Kaia (ab 4 Jahre) markiert: geeignet, mit Anpassung (z. B. Chili erst am Tisch) oder nicht geeignet.
   - „Woche vorschlagen“ füllt freie Tage mit Gerichten der Saison und plant Fisch höchstens 1× in 4 Wochen.
+- **Apple Health (über Kurzbefehl):** Gewicht, Workouts, Schritte, aktive und Ruhe-Energie der letzten 14 Tage. „Health abgleichen“ startet den Kurzbefehl, danach einmal „Einsetzen“. Workouts werden den geplanten Einheiten der Woche zugeordnet und mit einem Tipp übernommen; den Knie-Check bestätigst du selbst. Die Daten bleiben auf dem iPhone.
 - **Gewicht:** Einträge pro Person mit Wochendurchschnitt, Verlauf, Fortschritt und Zielgewicht (Rohat: 85 kg).
 - **Einkauf:** Die Zutaten der Woche werden zusammengefasst und nach Rubriken sortiert. Gewürze und Öle stehen unter „Vorrat prüfen“. Eigene Artikel lassen sich ergänzen, alles kann abgehakt werden.
   - **„An Erinnerungen senden“** überträgt jeden offenen Artikel einzeln in die geteilte Liste. Schon gesendete Artikel werden beim nächsten Mal übersprungen.
@@ -59,4 +60,4 @@ Alle Daten liegen lokal auf dem jeweiligen iPhone (`localStorage`), es gibt kein
 
 ## Technik
 
-`index.html`, `css/styles.css`, `js/app.js` (UI), `js/training.js` (Plan), `js/exercises.js` (Übungen mit Zeichnungen), `js/recipes.js` (Rezepte), `sw.js` (Offline-Cache, bei Updates `VERSION` erhöhen), `manifest.webmanifest`.
+`index.html`, `css/styles.css`, `js/app.js` (UI), `js/training.js` (Plan), `js/exercises.js` (Übungen mit Zeichnungen), `js/health.js` (Health-Import und Zuordnung), `js/recipes.js` (Rezepte), `sw.js` (Offline-Cache, bei Updates `VERSION` erhöhen), `manifest.webmanifest`.
