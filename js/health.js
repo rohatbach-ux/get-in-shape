@@ -23,6 +23,9 @@ export function parseNumber(raw) {
   return Number.isFinite(n) ? n : null;
 }
 
+const MONTHS = ["jan", "feb", "m", "apr", "mai", "jun", "jul", "aug", "sep", "okt", "nov", "dez"];
+const MONTH_ALIASES = { "mär": 3, "mar": 3, "may": 5, "oct": 10, "dec": 12 };
+
 function parseDate(raw) {
   const s = String(raw ?? "");
   let m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
@@ -30,6 +33,12 @@ function parseDate(raw) {
   if (!date && (m = s.match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/))) {
     const y = m[3].length === 2 ? "20" + m[3] : m[3];
     date = `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  }
+  // Standardformat von Kurzbefehle, z. B. „12. Nov. 2026“ oder „12. November 2026“
+  if (!date && (m = s.match(/(\d{1,2})\.?\s*([A-Za-zÄäÖöÜü]{3,})\.?\s*(\d{4})/))) {
+    const name = m[2].toLowerCase();
+    const mon = MONTH_ALIASES[name.slice(0, 3)] || (name.startsWith("mai") ? 5 : MONTHS.findIndex((x) => x !== "m" && name.startsWith(x)) + 1);
+    if (mon) date = `${m[3]}-${String(mon).padStart(2, "0")}-${m[1].padStart(2, "0")}`;
   }
   const t = s.match(/(\d{1,2}):(\d{2})/);
   return { date, time: t ? `${t[1].padStart(2, "0")}:${t[2]}` : "" };

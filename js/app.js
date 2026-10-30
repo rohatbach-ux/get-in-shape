@@ -246,7 +246,8 @@ function weightCard(p) {
       <button class="btn block" data-act="weight-add">${icon("plus")}Gewicht eintragen</button>
     </div>`;
   }
-  const first = list[0].kg, latest = list[list.length - 1].kg;
+  // Startgewicht: erste Messung ab Planstart (ältere Health-Werte zählen nur zum Verlauf)
+  const first = (list.find((e) => e.date >= state.startDate) || list[0]).kg, latest = list[list.length - 1].kg;
   const avgs = weeklyAverages(list);
   const avg = avgs[avgs.length - 1].kg;
   const lost = first - avg;
