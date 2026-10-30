@@ -68,6 +68,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const recipeById = (id) => RECIPES.find((r) => r.id === id);
 const isVeg = (r) => r.diet === "vegan" || r.diet === "vegetarisch";
+const icon = (name, cls = "") => `<svg class="ic ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
 function toast(msg) {
   const t = $("#toast");
@@ -157,22 +158,22 @@ function renderTraining() {
 
   let banner = "";
   if (now < 1) {
-    banner = `<div class="banner">Der Plan startet am <b>Mo ${parseIso(state.startDate).toLocaleDateString("de-DE")}</b>. Bis dahin: schönen Urlaub! Die Einheiten kannst du dir schon ansehen.</div>`;
+    banner = `<div class="banner">${icon("info")}<div>Der Plan startet am <b>Mo ${parseIso(state.startDate).toLocaleDateString("de-DE")}</b>. Bis dahin: schönen Urlaub! Die Einheiten kannst du dir schon ansehen.</div></div>`;
   } else if (p === "rohat") {
     const gd = goalDate();
     const left = Math.ceil((gd - new Date()) / (7 * 864e5));
     banner = left > 0
-      ? `<div class="banner">🎯 <b>20 km</b> am So ${gd.toLocaleDateString("de-DE")} · noch ${left} ${left === 1 ? "Woche" : "Wochen"}</div>`
-      : `<div class="banner">🎯 Zielwoche geschafft – jetzt <b>Erhaltung</b>: regelmäßig 20 km halten.</div>`;
+      ? `<div class="banner">${icon("target")}<div><b>20 km</b> am So ${gd.toLocaleDateString("de-DE")} · noch ${left} ${left === 1 ? "Woche" : "Wochen"}</div></div>`
+      : `<div class="banner">${icon("target")}<div>Zielwoche geschafft – jetzt <b>Erhaltung</b>: regelmäßig 20 km halten.</div></div>`;
   }
 
   return `
     ${banner}
     <div class="weeknav">
-      <button data-act="tweek" data-d="-1" ${c <= 1 ? "disabled" : ""} aria-label="Vorherige Woche">‹</button>
+      <button data-act="tweek" data-d="-1" ${c <= 1 ? "disabled" : ""} aria-label="Vorherige Woche">${icon("chevron-left")}</button>
       <div class="label"><strong>${title}</strong>
         <span>${fmtDate(start)} – ${fmtDate(addDays(start, 6))}${extra ? " · " + extra : ""}${isCurrent ? " · aktuell" : ""}</span></div>
-      <button data-act="tweek" data-d="1" ${c >= seq.length ? "disabled" : ""} aria-label="Nächste Woche">›</button>
+      <button data-act="tweek" data-d="1" ${c >= seq.length ? "disabled" : ""} aria-label="Nächste Woche">${icon("chevron-right")}</button>
     </div>
 
     <div class="card">
@@ -189,20 +190,20 @@ function renderTraining() {
 
     <div class="section-title">Einheiten</div>
     ${sessions.map((s) => sessionCard(p, c, s)).join("")}
-    ${isCurrent ? `<p><button class="btn small block" data-act="repeat-week">↻ Diese Woche nächste Woche wiederholen</button></p>` : ""}
-    <p class="hint">Optionale Einheiten zählen nicht für die Serie.${p === "rohat" ? " Knie-Regel: Schmerz, Schwellung oder Wegknick-Gefühl → Pause und Woche wiederholen." : ""}<br>
+    ${isCurrent ? `<div class="btn-stack"><button class="btn block" data-act="repeat-week">${icon("repeat")}Diese Woche nächste Woche wiederholen</button></div>` : ""}
+    <p class="hint mt-4">Optionale Einheiten zählen nicht für die Serie.${p === "rohat" ? " Knie-Regel: Schmerz, Schwellung oder Wegknick-Gefühl → Pause und Woche wiederholen." : ""}<br>
     * Zeigt nur, was auf <em>diesem</em> iPhone abgehakt wurde.</p>`;
 }
 
 const TYPE_LABEL = { lauf: "Laufen", reif: "Pamela Reif", studio: "Studio", cardio: "Cardio", kraft: "Kraft" };
 const KNEE = { ok: "Knie ok", light: "Knie leicht spürbar", pain: "Knie: Schmerz/Schwellung" };
-const KNEE_ICON = { ok: "🟢", light: "🟡", pain: "🔴" };
+const KNEE_ICON = { ok: '<span class="knee-dot ok"></span>', light: '<span class="knee-dot light"></span>', pain: '<span class="knee-dot pain"></span>' };
 
 function exerciseList(exs) {
   return `<ul class="ex-list">${exs.map((e) => {
-    if (typeof e === "string") return `<li>• ${esc(e)}</li>`;
+    if (typeof e === "string") return `<li class="plain">${esc(e)}</li>`;
     const ex = EXERCISES[e.id];
-    return `<li><button class="ex-btn" data-act="exercise" data-id="${e.id}" data-dose="${esc(e.dose)}"><span>${esc(ex.name)}<small>${esc(e.dose)}</small></span></button></li>`;
+    return `<li><button class="ex-btn" data-act="exercise" data-id="${e.id}" data-dose="${esc(e.dose)}"><span>${esc(ex.name)}<small>${esc(e.dose)}</small></span>${icon("chevron-right")}</button></li>`;
   }).join("")}</ul>`;
 }
 
@@ -211,19 +212,19 @@ function sessionCard(p, c, s) {
   const feelIcon = ["", "😫", "😕", "🙂", "😊", "💪"];
   return `
     <div class="card session ${log ? "done" : ""}">
-      <button class="check" data-act="toggle-session" data-id="${s.id}" aria-label="${log ? "Bestätigung zurücknehmen" : "Einheit bestätigen"}">${log ? "✓" : ""}</button>
+      <button class="check" data-act="toggle-session" data-id="${s.id}" aria-label="${log ? "Bestätigung zurücknehmen" : "Einheit bestätigen"}">${log ? icon("check") : ""}</button>
       <div class="body">
         <div class="title">${esc(s.title)}</div>
         <div class="meta">
-          <span class="tag ${s.type}">${TYPE_LABEL[s.type]}</span>
-          ${s.together ? '<span class="tag reif">gemeinsam</span>' : ""}
+          <span class="tag">${TYPE_LABEL[s.type]}</span>
+          ${s.together ? '<span class="tag accent">gemeinsam</span>' : ""}
           ${s.optional ? '<span class="tag">optional</span>' : ""}
-          <span>Vorschlag: ${s.day}</span>${s.minutes ? `<span>· ${s.minutes} Min</span>` : ""}
+          <span>Vorschlag: ${s.day}${s.minutes ? ` · ${s.minutes} Min` : ""}</span>
         </div>
         <div class="detail">${esc(s.detail)}</div>
         ${s.exercises ? exerciseList(s.exercises) : ""}
-        ${log ? `<div class="logged">Erledigt am ${new Date(log.at).toLocaleDateString("de-DE")} ${feelIcon[log.feel] || ""}${log.knee ? " · " + KNEE_ICON[log.knee] + " " + KNEE[log.knee] : ""}${log.note ? " · " + esc(log.note) : ""}</div>` : ""}
-        ${s.link ? `<div class="actions"><a class="btn small" href="${s.link}" target="_blank" rel="noopener">▶ Videos auf YouTube</a></div>` : ""}
+        ${log ? `<div class="logged">${icon("check", "sm")}<span>Erledigt am ${new Date(log.at).toLocaleDateString("de-DE")} ${feelIcon[log.feel] || ""}</span>${log.knee ? `<span class="${log.knee === "pain" ? "knee-pain" : ""}">${KNEE_ICON[log.knee]} ${KNEE[log.knee]}</span>` : ""}${log.note ? `<span>${esc(log.note)}</span>` : ""}</div>` : ""}
+        ${s.link ? `<div class="actions"><a class="btn small" href="${s.link}" target="_blank" rel="noopener">${icon("play", "sm fill")}Videos auf YouTube</a></div>` : ""}
       </div>
     </div>`;
 }
@@ -233,18 +234,20 @@ function openExercise(id, dose) {
   openSheet(ex.name, `
     ${illustration(ex)}
     ${dose ? `<div class="ex-dose">Diese Woche: ${esc(dose)}</div>` : ""}
-    <p class="hint" style="margin:4px 0">${esc(ex.goal)}</p>
+    <p class="ex-goal">${esc(ex.goal)}</p>
     <div class="ex-sec">So geht's</div>
-    <ol>${ex.steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>
-    <div class="knee-box">
-      <div class="ex-sec">Achte auf dein Knie</div>
+    <ol class="ex-steps">${ex.steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>
+    <div class="callout">${icon("alert")}<div class="c-body">
+      <div class="c-title">Achte auf dein Knie</div>
       <ul>${ex.knee.map((x) => `<li>${esc(x)}</li>`).join("")}
         <li>Sofort aufhören bei stechendem Schmerz, Schwellung oder Wegknick-Gefühl.</li></ul>
-    </div>
+    </div></div>
     <div class="ex-sec">Typische Fehler</div>
-    <ul>${ex.mistakes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
-    <p class="hint">Orange = arbeitendes Bein. Die Zeichnungen sind schematisch.</p>
-    <p><a class="btn block" href="https://www.youtube.com/results?search_query=${encodeURIComponent(ex.video)}" target="_blank" rel="noopener">▶ Video-Beispiele auf YouTube</a></p>`);
+    <ul class="ex-steps">${ex.mistakes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+    <div class="btn-stack">
+      <a class="btn block" href="https://www.youtube.com/results?search_query=${encodeURIComponent(ex.video)}" target="_blank" rel="noopener">${icon("play", "sm fill")}Video-Beispiele auf YouTube</a>
+      <p class="hint center">Blau = arbeitendes Bein. Die Zeichnungen sind schematisch.</p>
+    </div>`);
 }
 
 function repeatWeek() {
@@ -268,15 +271,15 @@ function openConfirm(id) {
   const askKnee = p === "rohat" && s.knee;
   let feel = 0, knee = null;
   openSheet(`Einheit bestätigen`, `
-    <p><b>${esc(s.title)}</b></p>
-    <p class="hint">Wie hat es sich angefühlt?</p>
-    <div class="feel">${["😫", "😕", "🙂", "😊", "💪"].map((f, i) => `<button data-feel="${i + 1}" aria-pressed="false">${f}</button>`).join("")}</div>
+    <p class="sheet-lead">${esc(s.title)}</p>
+    <span class="field-label">Wie hat es sich angefühlt?</span>
+    <div class="choice">${["😫", "😕", "🙂", "😊", "💪"].map((f, i) => `<button data-feel="${i + 1}" aria-pressed="false">${f}</button>`).join("")}</div>
     ${askKnee ? `
-      <p class="hint">Knie-Check (während und nach der Einheit)</p>
-      <div class="feel">${Object.keys(KNEE).map((k) => `<button data-knee="${k}" aria-pressed="false" style="font-size:13px">${KNEE_ICON[k]}<br>${{ ok: "ok", light: "leicht spürbar", pain: "Schmerz / Schwellung" }[k]}</button>`).join("")}</div>` : ""}
-    <p class="hint">Notiz (optional)</p>
+      <span class="field-label">Knie-Check (während und nach der Einheit)</span>
+      <div class="choice three">${Object.keys(KNEE).map((k) => `<button data-knee="${k}" aria-pressed="false">${KNEE_ICON[k]}${{ ok: "ok", light: "leicht spürbar", pain: "Schmerz / Schwellung" }[k]}</button>`).join("")}</div>` : ""}
+    <label class="field-label" for="c-note">Notiz (optional)</label>
     <textarea id="c-note" placeholder="${s.km ? `z. B. ${s.km} km in 45 Min` : "z. B. alles gut"}"></textarea>
-    <p><button class="btn primary block" id="c-save">Bestätigen</button></p>`);
+    <button class="btn primary block" id="c-save">Bestätigen</button>`);
   const sheet = $("#sheet");
   const pick = (attr, set) => sheet.querySelectorAll(`[data-${attr}]`).forEach((b) =>
     b.addEventListener("click", () => {
@@ -290,22 +293,22 @@ function openConfirm(id) {
     save(); closeSheet(); render();
     if (knee === "pain") openKneeAdvice(c);
     else if (knee === "light") toast("Beobachten: wird es stärker → Pause machen");
-    else toast(weekComplete(p, c) ? "Woche geschafft! 🎉" : "Einheit bestätigt");
+    else toast(weekComplete(p, c) ? "Woche geschafft!" : "Einheit bestätigt");
   });
 }
 
 function openKneeAdvice(c) {
   const canRepeat = c === todayCal();
   openSheet("Dein Knie meldet sich", `
-    <div class="knee-box">
+    <div class="callout danger">${icon("alert")}<div class="c-body">
       <ul>
         <li><b>Die nächsten 2–3 Tage nicht laufen.</b> Gehen, Radfahren und Knie-Kraft B ohne Schmerz sind okay.</li>
         <li>Bei Schwellung: hochlegen und kühlen (Kühlpack in ein Tuch, 15 Min).</li>
         <li>Danach mit einem kurzen, lockeren Lauf testen. Ist er schmerzfrei, geht es mit dem Plan weiter.</li>
         <li><b>Wenn die Schwellung bleibt, das Knie wegknickt oder blockiert: ärztlich abklären lassen.</b> Bei Knien ohne Kreuzband kann das ein Hinweis auf einen Meniskusschaden sein.</li>
       </ul>
-    </div>
-    ${canRepeat ? `<p><button class="btn primary block" data-act-sheet="repeat">↻ Diese Woche nächste Woche wiederholen</button></p>` : ""}
+    </div></div>
+    ${canRepeat ? `<div class="btn-stack"><button class="btn primary block" data-act-sheet="repeat">${icon("repeat")}Diese Woche nächste Woche wiederholen</button></div>` : ""}
   `);
   $("#sheet [data-act-sheet='repeat']")?.addEventListener("click", repeatWeek);
 }
@@ -324,9 +327,10 @@ function renderEssen() {
   return `
     ${mealWeekNav(wk)}
     <div class="btn-row">
-      <button class="btn" data-act="suggest">✨ Woche vorschlagen</button>
-      <button class="btn" data-act="browse">📖 Alle Rezepte</button>
+      <button class="btn" data-act="suggest">${icon("sparkle")}Vorschlagen</button>
+      <button class="btn" data-act="browse">${icon("book")}Alle Rezepte</button>
     </div>
+    <div class="spacer"></div>
     ${DAYS.map((d, i) => {
       const list = meals[d];
       const kcal = list.reduce((s, m) => s + (recipeById(m.rid)?.kcal || 0), 0);
@@ -344,18 +348,18 @@ function renderEssen() {
                   <div class="m-meta">${r.source} · ${r.kcal ? r.kcal + " kcal/Port." : "kcal k. A."}${r.minutes ? " · " + r.minutes + " Min" : ""}</div>
                 </div>
                 <div class="stepper" aria-label="Portionen">
-                  <button data-act="srv" data-day="${d}" data-idx="${idx}" data-d="-1" aria-label="Weniger Portionen">−</button>
+                  <button data-act="srv" data-day="${d}" data-idx="${idx}" data-d="-1" aria-label="Weniger Portionen">${icon("minus")}</button>
                   <span>${m.servings}</span>
-                  <button data-act="srv" data-day="${d}" data-idx="${idx}" data-d="1" aria-label="Mehr Portionen">+</button>
+                  <button data-act="srv" data-day="${d}" data-idx="${idx}" data-d="1" aria-label="Mehr Portionen">${icon("plus")}</button>
                 </div>
-                <button class="icon-btn" data-act="rm-meal" data-day="${d}" data-idx="${idx}" aria-label="Entfernen">✕</button>
+                <button class="icon-btn" data-act="rm-meal" data-day="${d}" data-idx="${idx}" aria-label="Entfernen">${icon("x")}</button>
               </div>`;
           }).join("")}
-          <button class="btn ghost small" data-act="add-meal" data-day="${d}">+ Gericht</button>
+          <button class="btn ghost" data-act="add-meal" data-day="${d}">${icon("plus", "sm")}Gericht</button>
         </div>`;
     }).join("")}
-    ${planned ? `<button class="btn primary block" data-act="go-shop">🛒 Einkaufsliste für diese Woche</button>` : ""}
-    <p class="hint">Zahlen neben dem Gericht = Portionen. Zubereitung jeweils im Original-Rezept (Link im Rezept).</p>`;
+    ${planned ? `<div class="btn-stack"><button class="btn primary block" data-act="go-shop">${icon("cart")}Einkaufsliste für diese Woche</button></div>` : ""}
+    <p class="hint mt-4">Zahlen neben dem Gericht = Portionen. Zubereitung jeweils im Original-Rezept (Link im Rezept).</p>`;
 }
 
 function mealWeekNav(wk) {
@@ -364,9 +368,9 @@ function mealWeekNav(wk) {
   const label = wk === thisWeek ? "Diese Woche" : wk === iso(addDays(parseIso(thisWeek), 7)) ? "Nächste Woche" : "Woche";
   return `
     <div class="weeknav">
-      <button data-act="mweek" data-d="-7" aria-label="Vorherige Woche">‹</button>
+      <button data-act="mweek" data-d="-7" aria-label="Vorherige Woche">${icon("chevron-left")}</button>
       <div class="label"><strong>${label}</strong><span>${fmtDate(mon)} – ${fmtDate(addDays(mon, 6))}</span></div>
-      <button data-act="mweek" data-d="7" aria-label="Nächste Woche">›</button>
+      <button data-act="mweek" data-d="7" aria-label="Nächste Woche">${icon("chevron-right")}</button>
     </div>`;
 }
 
@@ -405,13 +409,15 @@ function recipeListHtml(day) {
     <div class="chips">${filters.map(([k, l]) => `<button data-filter="${k}" aria-pressed="${ui.recipeFilter === k}">${l}</button>`).join("")}</div>
     ${list.map((r) => `
       <button class="card recipe" data-pick="${r.id}">
-        <div class="r-title">${esc(r.title)}</div>
-        <div class="r-meta">
-          <span class="tag">${r.source}</span>
-          <span class="tag ${isVeg(r) ? "veg" : ""}">${DIET_LABEL[r.diet]}</span>
-          <span>${r.kcal ? r.kcal + " kcal" : "kcal k. A."}</span>${r.minutes ? `<span>· ${r.minutes} Min</span>` : ""}
-          ${day ? "" : "<span>›</span>"}
+        <div class="r-body">
+          <div class="r-title">${esc(r.title)}</div>
+          <div class="r-meta">
+            <span class="tag">${r.source}</span>
+            <span class="tag ${isVeg(r) ? "accent" : ""}">${DIET_LABEL[r.diet]}</span>
+            <span>${r.kcal ? r.kcal + " kcal" : "kcal k. A."}${r.minutes ? ` · ${r.minutes} Min` : ""}</span>
+          </div>
         </div>
+        ${icon(day ? "plus" : "chevron-right")}
       </button>`).join("") || '<p class="empty">Keine Treffer</p>'}`;
 }
 
@@ -437,18 +443,18 @@ function openRecipe(id, servings) {
   const srv = servings || state.householdServings;
   const f = srv / r.servings;
   openSheet(r.title, `
-    <div class="r-meta recipe" style="margin-bottom:8px">
+    <div class="r-meta recipe-head">
       <span class="tag">${r.source}</span>
-      <span class="tag ${isVeg(r) ? "veg" : ""}">${DIET_LABEL[r.diet]}</span>
-      <span class="hint">${r.kcal ? r.kcal + " kcal/Portion" : "kcal nicht angegeben"}${r.minutes ? " · " + r.minutes + " Min" : ""}</span>
+      <span class="tag ${isVeg(r) ? "accent" : ""}">${DIET_LABEL[r.diet]}</span>
+      <span>${r.kcal ? r.kcal + " kcal/Portion" : "kcal nicht angegeben"}${r.minutes ? " · " + r.minutes + " Min" : ""}</span>
     </div>
-    ${r.kcalNote ? `<div class="note">kcal: ${esc(r.kcalNote)}</div>` : ""}
-    ${r.note ? `<div class="note">${esc(r.note)}</div>` : ""}
-    <div class="section-title">Zutaten für ${srv} Portionen <span style="text-transform:none">(Original: ${r.servings})</span></div>
+    ${r.kcalNote ? `<div class="callout">${icon("info")}<div class="c-body">kcal: ${esc(r.kcalNote)}</div></div>` : ""}
+    ${r.note ? `<div class="callout">${icon("info")}<div class="c-body">${esc(r.note)}</div></div>` : ""}
+    <div class="section-title">Zutaten für ${srv} Portionen <span class="sub">(Original: ${r.servings})</span></div>
     <div class="card list-group">
       ${r.ingredients.map((i) => `<div class="ing"><span>${esc(i.name)}</span><span class="q">${esc(fmtAmount(scaleQty(i.qty, i.unit, f), i.unit))}</span></div>`).join("")}
     </div>
-    <p><a class="btn primary block" href="${r.url}" target="_blank" rel="noopener">Zubereitung im Original (${r.source}) ↗</a></p>
+    <a class="btn primary block" href="${r.url}" target="_blank" rel="noopener">Zubereitung bei ${r.source}${icon("external", "sm")}</a>
     <div class="section-title">Zum Plan hinzufügen (${mealWeekLabel()})</div>
     <div class="chips">${DAYS.map((d) => `<button data-addday="${d}">${d}</button>`).join("")}</div>`);
   $("#sheet").querySelectorAll("[data-addday]").forEach((b) =>
@@ -507,27 +513,27 @@ function renderEinkauf() {
   const itemRow = (e) => `
     <div class="item ${ss.checked[e.key] ? "checked" : ""}">
       <input type="checkbox" id="i-${esc(e.key)}" data-check="${esc(e.key)}" ${ss.checked[e.key] ? "checked" : ""}>
-      <label for="i-${esc(e.key)}">${esc(e.name)} ${ss.sent[e.key] ? '<span class="sent">✓ in Erinnerungen</span>' : ""}
+      <label for="i-${esc(e.key)}">${esc(e.name)} ${ss.sent[e.key] ? '<span class="sent">${icon("check")}Erinnerungen</span>' : ""}
         <span class="from">${esc([...e.from].join(", "))}</span></label>
       <span class="qty">${esc(itemAmount(e))}</span>
     </div>`;
 
   if (!items.length && !ss.extra.length) {
     return `${mealWeekNav(wk)}
-      <div class="empty">Für diese Woche sind noch keine Gerichte geplant.<br><br>
+      <div class="empty">Für diese Woche sind noch keine Gerichte geplant.<br>
       <button class="btn primary" data-act="tab" data-tab="essen">Zum Essensplan</button></div>
       ${extraHtml(ss)}`;
   }
 
   return `
     ${mealWeekNav(wk)}
-    <div class="card">
-      <b>${open} offene Artikel</b>
-      <p class="hint" style="margin:4px 0 10px">Überträgt alle offenen, noch nicht gesendeten Artikel in die geteilte Erinnerungen-Liste.</p>
-      <button class="btn primary block" data-act="send-reminders">📝 An Erinnerungen senden</button>
-      <div class="btn-row" style="margin-top:8px">
-        <button class="btn small" data-act="share">Teilen / Kopieren</button>
-        <button class="btn small" data-act="resend">Alles erneut senden</button>
+    <div class="card shop-summary">
+      <div class="count">${open} offene Artikel</div>
+      <p class="hint">Überträgt alle offenen, noch nicht gesendeten Artikel in die geteilte Erinnerungen-Liste.</p>
+      <button class="btn primary block" data-act="send-reminders">${icon("list")}An Erinnerungen senden</button>
+      <div class="btn-row mt-2">
+        <button class="btn small" data-act="share">${icon("share", "sm")}Teilen</button>
+        <button class="btn small" data-act="resend">${icon("repeat", "sm")}Erneut senden</button>
       </div>
     </div>
     ${cats.map((c) => {
@@ -539,7 +545,7 @@ function renderEinkauf() {
     ${pantry.length ? `
       <div class="section-title">Vorrat prüfen</div>
       <div class="card list-group">
-        <p class="hint" style="margin:8px 0">Gewürze, Öle, Saucen – meist vorhanden. Antippen, wenn es auf die Liste soll.</p>
+        <p class="hint">Gewürze, Öle, Saucen – meist vorhanden. Antippen, wenn es auf die Liste soll.</p>
         ${pantry.map((e) => `
           <div class="item">
             <input type="checkbox" id="p-${esc(e.key)}" data-pantry="${esc(e.key)}" ${ss.pantry[e.key] ? "checked" : ""}>
@@ -547,7 +553,7 @@ function renderEinkauf() {
             <span class="qty">${esc(itemAmount(e))}</span>
           </div>`).join("")}
       </div>` : ""}
-    <p><button class="btn small danger" data-act="clear-checked">Abgehakte zurücksetzen</button></p>`;
+    <div class="actions"><button class="btn small danger" data-act="clear-checked">Abgehakte zurücksetzen</button></div>`;
 }
 
 function extraHtml(ss) {
@@ -557,12 +563,12 @@ function extraHtml(ss) {
       ${ss.extra.map((x) => `
         <div class="item ${x.checked ? "checked" : ""}">
           <input type="checkbox" id="x-${x.id}" data-xcheck="${x.id}" ${x.checked ? "checked" : ""}>
-          <label for="x-${x.id}">${esc(x.name)} ${x.sent ? '<span class="sent">✓ in Erinnerungen</span>' : ""}</label>
-          <button class="icon-btn" data-act="rm-extra" data-id="${x.id}" aria-label="Entfernen">✕</button>
+          <label for="x-${x.id}">${esc(x.name)} ${x.sent ? '<span class="sent">${icon("check")}Erinnerungen</span>' : ""}</label>
+          <button class="icon-btn" data-act="rm-extra" data-id="${x.id}" aria-label="Entfernen">${icon("x")}</button>
         </div>`).join("")}
-      <form class="add-row" data-form="extra" style="padding:10px 0">
-        <input type="text" name="artikel" placeholder="z. B. Haferflocken, Bananen" autocomplete="off" enterkeyhint="done">
-        <button class="btn primary" type="submit">+</button>
+      <form class="add-row" data-form="extra">
+        <input type="text" name="artikel" placeholder="z. B. Haferflocken, Bananen" autocomplete="off" enterkeyhint="done" aria-label="Eigener Artikel">
+        <button class="btn primary" type="submit" aria-label="Hinzufügen">${icon("plus")}</button>
       </form>
     </div>`;
 }
@@ -618,22 +624,22 @@ function renderMehr() {
   return `
     <div class="section-title">Trainingsplan</div>
     <div class="card">
-      <label class="hint" for="s-start">Start (Montag der Woche 1)</label>
+      <label class="field-label" for="s-start">Start (Montag der Woche 1)</label>
       <input type="date" id="s-start" value="${state.startDate}">
-      <p class="hint">Gilt für Rohat und Steffi. Das Datum wird automatisch auf den Montag gesetzt.${todayCal() < 1 ? " Der Plan hat noch nicht begonnen." : ""}</p>
+      <p class="hint mt-2">Gilt für Rohat und Steffi. Das Datum wird automatisch auf den Montag gesetzt.${todayCal() < 1 ? " Der Plan hat noch nicht begonnen." : ""}</p>
       ${(state.repeats.rohat.length || state.repeats.steffi.length) ? `<p class="hint">Wiederholte Wochen – Rohat: ${state.repeats.rohat.join(", ") || "keine"} · Steffi: ${state.repeats.steffi.join(", ") || "keine"}</p>
       <button class="btn small danger" data-act="reset-repeats">Wiederholungen zurücknehmen</button>` : ""}
     </div>
 
     <div class="section-title">Essen</div>
     <div class="card">
-      <label class="hint" for="s-srv">Standard-Portionen pro Gericht</label>
+      <label class="field-label" for="s-srv">Standard-Portionen pro Gericht</label>
       <select id="s-srv">${[1, 2, 3, 4, 6].map((n) => `<option ${n === state.householdServings ? "selected" : ""}>${n}</option>`).join("")}</select>
     </div>
 
     <div class="section-title">Erinnerungen (iCloud) einrichten</div>
     <div class="card">
-      <p class="hint" style="margin-top:0">Einmalig auf dem iPhone, von dem aus gesendet wird. Die App übergibt die Liste an einen Kurzbefehl, der jeden Artikel als eigene Erinnerung anlegt.</p>
+      <p class="hint">Einmalig auf dem iPhone, von dem aus gesendet wird. Die App übergibt die Liste an einen Kurzbefehl, der jeden Artikel als eigene Erinnerung anlegt.</p>
       <ol class="steps">
         <li>In <b>Erinnerungen</b> eine Liste <b>„Einkauf“</b> anlegen (Listentyp „Einkaufsliste“ sortiert automatisch nach Rubriken).</li>
         <li>Liste öffnen → <b>Teilen</b> → Steffi einladen. Ab dann synchronisiert iCloud die Liste.</li>
@@ -644,14 +650,14 @@ function renderMehr() {
         <li>Innerhalb der Schleife: <b>„Erinnerung hinzufügen“</b> → Text: <b>Wiederholungsobjekt</b>, Liste: <b>Einkauf</b>.</li>
         <li>Fertig. Beim ersten Senden fragt iOS einmal nach Erlaubnis.</li>
       </ol>
-      <label class="hint" for="s-sc">Name des Kurzbefehls</label>
+      <label class="field-label" for="s-sc">Name des Kurzbefehls</label>
       <input type="text" id="s-sc" value="${esc(state.shortcutName)}">
-      <p><button class="btn small" data-act="test-shortcut">Test senden</button></p>
+      <div class="btn-stack"><button class="btn block" data-act="test-shortcut">Test senden</button></div>
     </div>
 
     <div class="section-title">Daten</div>
     <div class="card">
-      <p class="hint" style="margin-top:0">Alles wird nur auf diesem iPhone gespeichert. Sicherung als Datei, z. B. in iCloud Drive:</p>
+      <p class="hint">Alles wird nur auf diesem iPhone gespeichert. Sicherung als Datei, z. B. in iCloud Drive:</p>
       <div class="btn-row">
         <button class="btn small" data-act="export">Sicherung exportieren</button>
         <label class="btn small">Sicherung laden<input type="file" id="s-import" accept="application/json" hidden></label>
@@ -659,9 +665,9 @@ function renderMehr() {
     </div>
 
     <div class="section-title">Installation</div>
-    <div class="card"><p class="hint" style="margin:0">In Safari öffnen → Teilen-Symbol → <b>„Zum Home-Bildschirm“</b>. Danach startet die App im Vollbild und funktioniert offline.</p></div>
+    <div class="card"><p class="hint">In Safari öffnen → Teilen-Symbol → <b>„Zum Home-Bildschirm“</b>. Danach startet die App im Vollbild und funktioniert offline.</p></div>
 
-    <p class="hint">Rezepte: Alnatura (alnatura.de) und Steffen Henssler (henssler.shop). Zutaten und kcal laut Originalseite, Zubereitung bitte im Original. Workouts: Pamela Reif auf YouTube.</p>`;
+    <p class="hint mt-5">Rezepte: Alnatura (alnatura.de) und Steffen Henssler (henssler.shop). Zutaten und kcal laut Originalseite, Zubereitung bitte im Original. Workouts: Pamela Reif auf YouTube.</p>`;
 }
 
 function exportData() {
@@ -690,7 +696,7 @@ function importData(file) {
 function openSheet(title, html) {
   const sheet = $("#sheet");
   sheet.innerHTML = `
-    <div class="sheet-head"><h2>${esc(title)}</h2><button class="btn small" data-close>Fertig</button></div>
+    <div class="sheet-head"><h2>${esc(title)}</h2><button class="btn ghost" data-close>Fertig</button></div>
     <div class="sheet-body">${html}</div>`;
   $("[data-close]", sheet).addEventListener("click", closeSheet);
   if (!sheet.open) sheet.showModal();
