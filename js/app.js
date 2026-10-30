@@ -1,4 +1,4 @@
-import { RECIPES, CATEGORIES, DIET_LABEL } from "./recipes.js";
+import { RECIPES, CATEGORIES, DIET_LABEL, SEASONS, KAIA_LABEL, quarterOf, activeRecipes } from "./recipes.js";
 import { WEEKS, GOAL_WEEK, PLAN_START, PLAN_VERSION, sessionsFor, weekLabel, PEOPLE } from "./training.js";
 import { EXERCISES, illustration } from "./exercises.js";
 
@@ -29,6 +29,8 @@ function defaultState() {
     shopping: {},   // { weekKey: { checked:{}, pantry:{}, sent:{}, extra:[] } }
     shortcutName: "Einkauf an Erinnerungen",
     householdServings: 2,
+    weights: { rohat: [], steffi: [] },        // [{ date: "YYYY-MM-DD", kg }]
+    weightGoal: { rohat: 85, steffi: null },
   };
 }
 
@@ -188,11 +190,114 @@ function renderTraining() {
       </div>
     </div>
 
+    ${weightCard(p)}
+
     <div class="section-title">Einheiten</div>
     ${sessions.map((s) => sessionCard(p, c, s)).join("")}
     ${isCurrent ? `<div class="btn-stack"><button class="btn block" data-act="repeat-week">${icon("repeat")}Diese Woche nächste Woche wiederholen</button></div>` : ""}
     <p class="hint mt-4">Optionale Einheiten zählen nicht für die Serie.${p === "rohat" ? " Knie-Regel: Schmerz, Schwellung oder Wegknick-Gefühl → Pause und Woche wiederholen." : ""}<br>
     * Zeigt nur, was auf <em>diesem</em> iPhone abgehakt wurde.</p>`;
+}
+
+// ---------- Gewicht ----------
+const fmtKg = (kg) => kg.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const weightsOf = (p) => [...(state.weights[p] || [])].sort((a, b) => a.date.localeCompare(b.date));
+
+function weeklyAverages(entries) {
+  const m = new Map();
+  for (const e of entries) {
+    const k = iso(mondayOf(parseIso(e.date)));
+    (m.get(k) || m.set(k, []).get(k)).push(e.kg);
+  }
+  return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([week, list]) => ({ week, kg: list.reduce((x, y) => x + y, 0) / list.length }));
+}
+
+function weightSpark(avgs, goal) {
+  if (avgs.length < 2) return "";
+  const pts = avgs.slice(-12), W = 300, H = 64, pad = 6;
+  // Skala nur aus dem Verlauf, damit kleine Fortschritte sichtbar bleiben
+  const vals = pts.map((a) => a.kg);
+  const min = Math.min(...vals) - 0.5, max = Math.max(...vals) + 0.5;
+  if (goal && (goal < min || goal > max)) goal = null;
+  const x = (i) => pad + (i / (pts.length - 1)) * (W - 2 * pad);
+  const y = (v) => pad + (1 - (v - min) / (max - min)) * (H - 2 * pad);
+  const line = pts.map((a, i) => `${x(i).toFixed(1)},${y(a.kg).toFixed(1)}`).join(" ");
+  const last = pts[pts.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Verlauf Wochendurchschnitt">
+    ${goal ? `<line x1="0" x2="${W}" y1="${y(goal)}" y2="${y(goal)}" class="goal-line"/>` : ""}
+    <polyline points="${line}" class="spark-line"/>
+    <circle cx="${x(pts.length - 1)}" cy="${y(last.kg)}" r="3.5" class="spark-dot"/>
+  </svg>`;
+}
+
+function weightCard(p) {
+  const list = weightsOf(p);
+  const goal = state.weightGoal[p];
+  if (!list.length) {
+    return `<div class="card weight">
+      <div class="w-head"><b>Gewicht</b>${goal ? `<span class="hint">Ziel ${fmtKg(goal)} kg</span>` : ""}</div>
+      <p class="hint mt-2">Einmal pro Woche morgens nüchtern wiegen. Die App zeigt den Wochendurchschnitt – Tagesschwankungen von 1–2 kg sind normal.</p>
+      <button class="btn block" data-act="weight-add">${icon("plus")}Gewicht eintragen</button>
+    </div>`;
+  }
+  const first = list[0].kg, latest = list[list.length - 1].kg;
+  const avgs = weeklyAverages(list);
+  const avg = avgs[avgs.length - 1].kg;
+  const lost = first - avg;
+  const pct = goal && first > goal ? Math.max(0, Math.min(100, Math.round(((first - avg) / (first - goal)) * 100))) : null;
+  return `<div class="card weight">
+    <div class="w-head"><b>Gewicht</b><button class="btn ghost small" data-act="weight-add">${icon("plus", "sm")}Eintragen</button></div>
+    <div class="stats w-stats">
+      <div class="stat"><b>${fmtKg(avg)}</b><span>Wochen-Ø</span></div>
+      <div class="stat"><b>${lost >= 0 ? "−" : "+"}${fmtKg(Math.abs(lost))}</b><span>seit Start (${fmtKg(first)})</span></div>
+      <div class="stat"><b>${goal ? fmtKg(Math.max(0, avg - goal)) : "–"}</b><span>${goal ? `bis Ziel ${fmtKg(goal)}` : "kein Ziel"}</span></div>
+    </div>
+    ${pct !== null ? `<div class="progress mt-4"><div class="bar"><i style="width:${pct}%"></i></div><b>${pct} %</b></div>` : ""}
+    ${weightSpark(avgs, goal)}
+    <p class="hint mt-2">Letzter Eintrag: ${fmtKg(latest)} kg am ${parseIso(list[list.length - 1].date).toLocaleDateString("de-DE")}</p>
+  </div>`;
+}
+
+function openWeightSheet() {
+  const p = state.profile;
+  const list = weightsOf(p).reverse();
+  openSheet(`Gewicht ${PEOPLE[p]}`, `
+    <label class="field-label" for="w-date">Datum</label>
+    <input type="date" id="w-date" value="${iso(new Date())}">
+    <label class="field-label mt-4" for="w-kg">Gewicht in kg</label>
+    <input type="text" id="w-kg" inputmode="decimal" placeholder="z. B. 104,6" autocomplete="off">
+    <label class="field-label mt-4" for="w-goal">Zielgewicht in kg (optional)</label>
+    <input type="text" id="w-goal" inputmode="decimal" value="${state.weightGoal[p] ? fmtKg(state.weightGoal[p]) : ""}" autocomplete="off">
+    <div class="btn-stack"><button class="btn primary block" id="w-save">Speichern</button></div>
+    ${list.length ? `<div class="section-title">Einträge</div>
+      <div class="card list-group">${list.map((e) => `
+        <div class="item"><label>${parseIso(e.date).toLocaleDateString("de-DE")}</label><span class="qty">${fmtKg(e.kg)} kg</span>
+          <button class="icon-btn" data-wdel="${e.date}" aria-label="Eintrag löschen">${icon("x")}</button></div>`).join("")}
+      </div>` : ""}`);
+  const sheet = $("#sheet");
+  const num = (v) => parseFloat(String(v).replace(",", "."));
+  $("#w-save", sheet).addEventListener("click", () => {
+    const date = $("#w-date", sheet).value || iso(new Date());
+    const kgRaw = $("#w-kg", sheet).value.trim();
+    const goalRaw = $("#w-goal", sheet).value.trim();
+    if (kgRaw) {
+      const kg = num(kgRaw);
+      if (!(kg > 30 && kg < 300)) { toast("Bitte ein gültiges Gewicht eingeben"); return; }
+      state.weights[p] = (state.weights[p] || []).filter((e) => e.date !== date).concat({ date, kg: Math.round(kg * 10) / 10 });
+    }
+    if (goalRaw) {
+      const g = num(goalRaw);
+      if (!(g > 30 && g < 300)) { toast("Bitte ein gültiges Zielgewicht eingeben"); return; }
+      state.weightGoal[p] = Math.round(g * 10) / 10;
+    } else state.weightGoal[p] = null;
+    save(); closeSheet(); render(); toast("Gespeichert");
+  });
+  sheet.querySelectorAll("[data-wdel]").forEach((b) => b.addEventListener("click", () => {
+    if (!confirm("Diesen Eintrag löschen?")) return;
+    state.weights[p] = state.weights[p].filter((e) => e.date !== b.dataset.wdel);
+    save(); render(); openWeightSheet();
+  }));
 }
 
 const TYPE_LABEL = { lauf: "Laufen", reif: "Pamela Reif", studio: "Studio", cardio: "Cardio", kraft: "Kraft" };
@@ -374,19 +479,32 @@ function mealWeekNav(wk) {
     </div>`;
 }
 
+// Fisch höchstens 1× in 4 Wochen: zählt diese und die 3 vorherigen Planwochen
+function fishPlannedRecently(wk) {
+  for (let i = 0; i < 4; i++) {
+    const m = state.meals[iso(addDays(parseIso(wk), -7 * i))];
+    if (m && DAYS.some((d) => m[d].some((x) => recipeById(x.rid)?.diet === "fisch"))) return true;
+  }
+  return false;
+}
+
 function suggestWeek() {
   const meals = weekMeals(ui.mealWeek);
   const empty = DAYS.filter((d) => meals[d].length === 0);
   if (!empty.length) { toast("Alle Tage sind schon belegt"); return; }
   const used = new Set(DAYS.flatMap((d) => meals[d].map((m) => m.rid)));
   const shuffle = (a) => a.map((x) => [Math.random(), x]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
-  const veg = shuffle(RECIPES.filter((r) => isVeg(r) && !used.has(r.id)));
-  const rest = shuffle(RECIPES.filter((r) => !isVeg(r) && !used.has(r.id)));
-  // ca. 2/3 vegetarisch/vegan
+  const pool = activeRecipes(parseIso(ui.mealWeek)).filter((r) => !used.has(r.id));
+  let fishOk = !fishPlannedRecently(ui.mealWeek);
+  const veg = shuffle(pool.filter(isVeg));
+  let rest = shuffle(pool.filter((r) => !isVeg(r) && (fishOk || r.diet !== "fisch")));
+  // ca. 2/3 vegetarisch/vegan, Fisch höchstens einmal
   empty.forEach((d, i) => {
     const pickVeg = i % 3 !== 2;
     const r = (pickVeg ? veg.shift() || rest.shift() : rest.shift() || veg.shift());
-    if (r) meals[d].push({ rid: r.id, servings: state.householdServings });
+    if (!r) return;
+    meals[d].push({ rid: r.id, servings: state.householdServings });
+    if (r.diet === "fisch") { fishOk = false; rest = rest.filter((x) => x.diet !== "fisch"); }
   });
   save(); render(); toast(`${empty.length} Tage gefüllt – einzeln änderbar`);
 }
@@ -396,6 +514,8 @@ function recipeFilterFn(f) {
     alle: () => true,
     veg: isVeg,
     schnell: (r) => r.minutes && r.minutes <= 20,
+    kaia: (r) => r.kaia === "ja",
+    saison: (r) => r.season !== "all",
     leicht: (r) => r.kcal && r.kcal <= 400,
     Alnatura: (r) => r.source === "Alnatura",
     Henssler: (r) => r.source === "Henssler",
@@ -403,9 +523,11 @@ function recipeFilterFn(f) {
 }
 
 function recipeListHtml(day) {
-  const filters = [["alle", "Alle"], ["veg", "Veggie/Vegan"], ["leicht", "≤ 400 kcal"], ["schnell", "≤ 20 Min"], ["Alnatura", "Alnatura"], ["Henssler", "Henssler"]];
-  const list = RECIPES.filter(recipeFilterFn(ui.recipeFilter));
+  const filters = [["alle", "Alle"], ["saison", SEASONS[quarterOf(parseIso(ui.mealWeek))]], ["veg", "Veggie/Vegan"], ["leicht", "≤ 400 kcal"], ["kaia", "Für Kaia"], ["schnell", "≤ 20 Min"], ["Alnatura", "Alnatura"], ["Henssler", "Henssler"]];
+  const active = activeRecipes(parseIso(ui.mealWeek));
+  const list = active.filter(recipeFilterFn(ui.recipeFilter));
   return `
+    <p class="hint tight">${active.length} Gerichte im Angebot · ${SEASONS[quarterOf(parseIso(ui.mealWeek))]}-Auswahl für die ${mealWeekLabel()}</p>
     <div class="chips">${filters.map(([k, l]) => `<button data-filter="${k}" aria-pressed="${ui.recipeFilter === k}">${l}</button>`).join("")}</div>
     ${list.map((r) => `
       <button class="card recipe" data-pick="${r.id}">
@@ -414,6 +536,8 @@ function recipeListHtml(day) {
           <div class="r-meta">
             <span class="tag">${r.source}</span>
             <span class="tag ${isVeg(r) ? "accent" : ""}">${DIET_LABEL[r.diet]}</span>
+            ${r.season !== "all" ? `<span class="tag">${SEASONS[r.season]}</span>` : ""}
+            ${r.kaia === "ja" ? '<span class="tag">Kaia ✓</span>' : ""}
             <span>${r.kcal ? r.kcal + " kcal" : "kcal k. A."}${r.minutes ? ` · ${r.minutes} Min` : ""}</span>
           </div>
         </div>
@@ -446,8 +570,11 @@ function openRecipe(id, servings) {
     <div class="r-meta recipe-head">
       <span class="tag">${r.source}</span>
       <span class="tag ${isVeg(r) ? "accent" : ""}">${DIET_LABEL[r.diet]}</span>
+      ${r.season !== "all" ? `<span class="tag">${SEASONS[r.season]}</span>` : ""}
       <span>${r.kcal ? r.kcal + " kcal/Portion" : "kcal nicht angegeben"}${r.minutes ? " · " + r.minutes + " Min" : ""}</span>
     </div>
+    ${r.retired ? `<div class="callout">${icon("info")}<div class="c-body">Nicht mehr im Angebot: ${esc(r.retired)}.</div></div>` : ""}
+    <div class="callout ${r.kaia === "nein" ? "danger" : ""}">${icon(r.kaia === "ja" ? "check" : "info")}<div class="c-body"><b>${KAIA_LABEL[r.kaia]}</b>${r.kaiaNote ? " – " + esc(r.kaiaNote) : ""}</div></div>
     ${r.kcalNote ? `<div class="callout">${icon("info")}<div class="c-body">kcal: ${esc(r.kcalNote)}</div></div>` : ""}
     ${r.note ? `<div class="callout">${icon("info")}<div class="c-body">${esc(r.note)}</div></div>` : ""}
     <div class="section-title">Zutaten für ${srv} Portionen <span class="sub">(Original: ${r.servings})</span></div>
@@ -736,6 +863,7 @@ view.addEventListener("click", (e) => {
   switch (act) {
     case "tweek": ui.trainingCal = clampCal(state.profile, ui.trainingCal + +b.dataset.d); render(); break;
     case "exercise": openExercise(b.dataset.id, b.dataset.dose); break;
+    case "weight-add": openWeightSheet(); break;
     case "repeat-week": repeatWeek(); break;
     case "reset-repeats":
       if (confirm("Alle Wochen-Wiederholungen zurücknehmen? Abgehakte Einheiten bleiben gespeichert.")) {

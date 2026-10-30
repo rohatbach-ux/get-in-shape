@@ -1,6 +1,6 @@
 # Get in Shape
 
-Web-App (PWA) für das iPhone: 8-Wochen-Trainingsplan für Rohat und Steffi, Essensplan mit Rezepten von Alnatura und Steffen Henssler sowie eine Einkaufsliste, die sich an die geteilte iCloud-Liste in **Erinnerungen** senden lässt.
+Web-App (PWA) für das iPhone: Trainingspläne für Rohat und Steffi mit Gewichts-Tracking, Essensplan mit Rezepten von Alnatura und Steffen Henssler sowie eine Einkaufsliste, die sich an die geteilte iCloud-Liste in **Erinnerungen** senden lässt.
 
 ## Funktionen
 
@@ -8,10 +8,14 @@ Web-App (PWA) für das iPhone: 8-Wochen-Trainingsplan für Rohat und Steffi, Ess
   - Rohat: 18 Wochen bis zum 20-km-Lauf (So 14.03.2027), danach Erhaltung. Knieschonend aufgebaut: Knie-Kraft A ist Pflicht, B ist optional, Pamela Reif ohne Sprünge, in Woche 1–4 keine Intervalle. Entlastung in Woche 4, 8, 12 und 15.
   - Jede Kraftübung hat eine bebilderte Anleitung (Start → Ende), die Dosierung der Woche und Hinweise fürs Knie.
   - Beim Bestätigen eines Laufs gibt es einen Knie-Check. Bei Schmerz schlägt die App „Woche wiederholen“ vor, das Ziel verschiebt sich dann automatisch.
+  - Fürs Abnehmen ergänzt: Oberkörper-Kraft (Liegestütz am Tisch, Rucksack-Rudern, Superman) in Kraft A und optional montags gelenkschonendes Cardio (Gehen oder Rad).
   - Steffi: 8 Wochen Studio Ganzkörper A/B, Pamela Reif und Cardio.
   - Einheiten werden mit Gefühl (1–5) und optionaler Notiz bestätigt.
   - Die App zeigt den Wochenfortschritt, eine Wochen-Serie und die Zahl der Einheiten gesamt.
-- **Essen:** 19 Rezepte, 12 davon vegetarisch oder vegan. Die App zeigt kcal pro Portion und die Zubereitungszeit. Rezepte lassen sich pro Tag einplanen und die Portionen anpassen. „Woche vorschlagen“ füllt freie Tage mit etwa ⅔ Veggie-Gerichten.
+- **Essen:** 60 Gerichte im Angebot – 40 ganzjährige und 20 saisonale, die zum Quartalswechsel (1.1., 1.4., 1.7., 1.10.) automatisch wechseln. Insgesamt 120 Rezepte, alle mit Quelle, kcal pro Portion und Zubereitungszeit. Auswahl auf Abnehmen ausgerichtet: ca. 550 kcal pro Portion als Obergrenze und mindestens ⅔ vegetarisch oder vegan. Keine Garnelen.
+  - Jedes Gericht ist für Kaia (ab 4 Jahre) markiert: geeignet, mit Anpassung (z. B. Chili erst am Tisch) oder nicht geeignet.
+  - „Woche vorschlagen“ füllt freie Tage mit Gerichten der Saison und plant Fisch höchstens 1× in 4 Wochen.
+- **Gewicht:** Einträge pro Person mit Wochendurchschnitt, Verlauf, Fortschritt und Zielgewicht (Rohat: 85 kg).
 - **Einkauf:** Die Zutaten der Woche werden zusammengefasst und nach Rubriken sortiert. Gewürze und Öle stehen unter „Vorrat prüfen“. Eigene Artikel lassen sich ergänzen, alles kann abgehakt werden.
   - **„An Erinnerungen senden“** überträgt jeden offenen Artikel einzeln in die geteilte Liste. Schon gesendete Artikel werden beim nächsten Mal übersprungen.
   - **„Teilen / Kopieren“** schickt die Liste als Text, z. B. per WhatsApp.

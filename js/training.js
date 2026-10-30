@@ -3,6 +3,8 @@
 // Rohat: 18 Wochen bis 20 km (So 14.03.2027), danach Erhaltung. Knieschonend
 // wegen nicht operierter Kreuzbänder: Knie-Kraft ist Pflicht, Pamela Reif ohne
 // Sprünge, in Woche 1–4 keine Intervalle. Entlastung in Woche 4, 8, 12, 15.
+// Fürs Abnehmen (105 → 85 kg): Oberkörper-Kraft in Kraft A, optional Mo
+// gelenkschonendes Cardio – bewusst kein zusätzlicher Lauf.
 // Steffi: 8 Wochen Studio-Wiedereinstieg (Woche 4 Entlastung).
 
 export const PLAN_START = "2026-11-09";
@@ -74,7 +76,13 @@ const KRAFT_A = [
   ["balance", ["3 × 30 Sek pro Bein", "3 × 30 Sek pro Bein, Augen zu", "3 × 45 Sek pro Bein auf Kissen"]],
   ["sideplank", ["auf den Knien, 3 × 20 Sek pro Seite", "3 × 30 Sek pro Seite", "3 × 45 Sek pro Seite"]],
   ["calf", ["beidbeinig 3 × 15", "einbeinig 3 × 12", "einbeinig auf Stufenkante 3 × 15"]],
+  // Oberkörper: erhält Muskeln im Kaloriendefizit
+  ["pushup", ["an der Wand 2 × 10", "am Tisch 3 × 8", "am Tisch 3 × 12 (oder auf den Knien)"]],
+  ["row", ["Rucksack 4–5 kg, 2 × 10 pro Arm", "Rucksack 6–8 kg, 3 × 10 pro Arm", "Rucksack 8–10 kg, 3 × 12 pro Arm"]],
+  ["superman", ["2 × 8, oben 2 Sek halten", "3 × 10, oben 2 Sek halten", "3 × 12, oben 3 Sek halten"]],
 ];
+// Gelenkschonendes Cardio für die Fettverbrennung (Minuten je Phase)
+const LOW_CARDIO = [30, 40, 45];
 const KRAFT_B = [
   ["clam", ["2 × 15 pro Seite", "3 × 15 pro Seite", "3 × 20 pro Seite"]],
   ["balancepad", ["auf dem Boden, 3 × 30 Sek pro Bein", "auf Kissen, 3 × 30 Sek pro Bein", "auf Kissen, 3 × 45 Sek, Kopf drehen"]],
@@ -135,14 +143,19 @@ export function sessionsFor(person, week) {
     const r = rohatWeek(week);
     return [
       {
+        id: "cardio-low", type: "cardio", day: "Mo", optional: true, knee: true, minutes: LOW_CARDIO[phase(week)],
+        title: "Gelenkschonendes Cardio",
+        detail: `${LOW_CARDIO[phase(week)]} Min zügig gehen oder Rad fahren – Puls etwas erhöht, Unterhaltung noch möglich. Empfohlen fürs Abnehmen, schont das Knie.`,
+      },
+      {
         id: "easy", type: "lauf", day: "Di", knee: true, minutes: r.easy,
         title: "Lockerer Lauf",
         detail: `${r.easy} Min im Plauder-Tempo.${r.easyNote ? " " + r.easyNote + "." : ""} ${RUN_PREP}`,
         exercises: [{ id: "legswing", dose: "vor dem Lauf, 10 × pro Bein" }],
       },
       {
-        id: "kraft-a", type: "kraft", day: "Mi", knee: true, minutes: 25,
-        title: "Knie-Kraft A",
+        id: "kraft-a", type: "kraft", day: "Mi", knee: true, minutes: 35,
+        title: "Knie-Kraft A + Oberkörper",
         detail: "Langsam und kontrolliert. Kein Schmerz über 2 von 10. Übung antippen für die Anleitung.",
         exercises: dose(KRAFT_A, week),
       },

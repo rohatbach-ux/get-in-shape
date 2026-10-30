@@ -16,8 +16,8 @@ function figure(pose) {
   if (P.e2) s += line([P.n, P.e2, P.w2], "limb back");
   if (P.k2) s += line([P.p, P.k2, P.f2, P.t2], "limb back");
   s += line([P.n, P.p], "torso");
-  s += line([P.p, P.k1, P.f1, P.t1], "limb work");
-  if (P.e1) s += line([P.n, P.e1, P.w1], "limb");
+  s += line([P.p, P.k1, P.f1, P.t1], P.workArms ? "limb" : "limb work");
+  if (P.e1) s += line([P.n, P.e1, P.w1], P.workArms ? "limb work" : "limb");
   s += `<circle cx="${P.h[0]}" cy="${P.h[1]}" r="8" class="head"/>`;
   return s;
 }
@@ -28,6 +28,7 @@ function bbox(frames) {
   const add = (x, y) => { xs.push(x); ys.push(y); };
   for (const f of frames) {
     for (const [k, pt] of Object.entries(f.pose)) {
+      if (!Array.isArray(pt)) continue;
       const r = k === "h" ? 12 : 5;
       add(pt[0] - r, pt[1] - r); add(pt[0] + r, pt[1] + r);
     }
@@ -37,6 +38,9 @@ function bbox(frames) {
       if (name === "step") { add(86, 118); add(154, G); }
       if (name === "pad") { add(a[0] - 2, 134); add(a[0] + 32, G); }
       if (name === "towel") { add(a[0], 136); add(a[0] + 18, G); }
+      if (name === "table") { add(114, 92); add(172, G); }
+      if (name === "stool") { add(118, 96); add(150, G); }
+      if (name === "bag") { add(a[0] - 2, a[1] - 2); add(a[0] + 16, a[1] + 18); }
     }
   }
   add(xs[0], G + 4);
@@ -56,6 +60,9 @@ const PROPS = {
   step: () => `<rect x="90" y="118" width="60" height="22" rx="2" class="prop"/>`,
   pad: (x = 70) => `<rect x="${x}" y="134" width="30" height="6" rx="3" class="prop"/>`,
   towel: (x) => `<rect x="${x}" y="136" width="18" height="4" rx="1" class="towel"/>`,
+  table: () => `<rect x="116" y="92" width="56" height="5" rx="2" class="prop"/><line x1="166" y1="97" x2="166" y2="${G}" class="wall"/>`,
+  stool: () => `<rect x="118" y="96" width="32" height="6" rx="2" class="prop"/><line x1="122" y1="102" x2="122" y2="${G}" class="wall"/><line x1="146" y1="102" x2="146" y2="${G}" class="wall"/>`,
+  bag: (x, y) => `<rect x="${x}" y="${y}" width="14" height="16" rx="3" class="towel"/>`,
   strap: (a, b) => `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="strap"/>`,
 };
 
@@ -290,6 +297,56 @@ export const EXERCISES = {
     knee: ["Knie des oberen Beins darf leicht gebeugt bleiben – Ziehen in der Kniekehle ist zu viel."],
     mistakes: ["Mit Schwung ziehen.", "Unteres Bein hebt mit ab."],
     video: "hinteren Oberschenkel dehnen liegend Handtuch",
+  },
+  pushup: {
+    name: "Liegestütz am Tisch",
+    goal: "Brust, Schultern, Arme – erhält Muskeln beim Abnehmen. Ohne Belastung fürs Knie.",
+    frames: [
+      { label: "Start: Hände auf der Tischkante, Körper gerade", props: [["table"]], pose: { workArms: true, h: [100, 70], n: [92, 78], p: [64, 106], k1: [46, 123], f1: [30, 138], t1: [24, 140], e1: [108, 86], w1: [122, 94] } },
+      { label: "Ende: Brust zur Tischkante senken", props: [["table"]], pose: { workArms: true, h: [116, 82], n: [106, 90], p: [70, 114], k1: [48, 127], f1: [30, 138], t1: [24, 140], e1: [100, 104], w1: [122, 94] }, arrows: [[[90, 72], [100, 84]]] },
+    ],
+    steps: [
+      "Hände schulterbreit auf eine stabile Tischkante (Woche 1–4: an die Wand).",
+      "Füße nach hinten, bis der Körper eine gerade Linie von Kopf bis Ferse bildet.",
+      "Langsam (2–3 Sek) die Brust zur Kante senken, Ellbogen ca. 45° vom Körper.",
+      "Kräftig zurückdrücken. Leichter: näher an den Tisch. Schwerer: später auf den Knien am Boden.",
+    ],
+    knee: ["Beine bleiben gestreckt und ruhig – das Knie wird nicht belastet.", "Der Tisch muss sicher stehen (gegen die Wand schieben)."],
+    mistakes: ["Hüfte hängt durch oder knickt nach oben.", "Ellbogen weit nach außen."],
+    video: "Liegestütz erhöht am Tisch Anfänger",
+  },
+  row: {
+    name: "Rucksack-Rudern (einarmig)",
+    goal: "Oberer Rücken und Arme – Gegenspieler zum Liegestütz, gut für die Haltung beim Laufen.",
+    frames: [
+      { label: "Start: abgestützt, Arm hängt mit Rucksack", props: [["stool"], ["bag", 98, 108]], pose: { workArms: true, h: [114, 62], n: [104, 70], p: [72, 92], k1: [66, 116], f1: [62, 140], t1: [72, 140], k2: [86, 116], f2: [90, 140], t2: [100, 140], e1: [104, 89], w1: [105, 108], e2: [118, 82], w2: [128, 96] } },
+      { label: "Ende: Ellbogen nach hinten-oben ziehen", props: [["stool"], ["bag", 88, 92]], pose: { workArms: true, h: [114, 62], n: [104, 70], p: [72, 92], k1: [66, 116], f1: [62, 140], t1: [72, 140], k2: [86, 116], f2: [90, 140], t2: [100, 140], e1: [86, 78], w1: [95, 93], e2: [118, 82], w2: [128, 96] }, arrows: [[[110, 104], [100, 92]]] },
+    ],
+    steps: [
+      "Rucksack mit Wasserflaschen packen (Woche 1–4 ca. 4–5 kg, später 6–10 kg).",
+      "Eine Hand auf Stuhl oder Hocker stützen, Rücken gerade, Knie leicht gebeugt.",
+      "Rucksack mit dem freien Arm zur Hüfte ziehen, Ellbogen dicht am Körper, Schulterblatt nach hinten.",
+      "Langsam ablassen. Alle Wiederholungen, dann Seite wechseln.",
+    ],
+    knee: ["Füße hüftbreit und fest, Knie leicht gebeugt und ruhig – kein Verdrehen.", "Auf stabilen Stuhl oder Hocker stützen, nicht auf etwas mit Rollen."],
+    mistakes: ["Rundrücken.", "Mit Schwung aus dem Oberkörper reißen."],
+    video: "einarmiges Rudern Rucksack Anleitung",
+  },
+  superman: {
+    name: "Superman (Rückenstrecker)",
+    goal: "Rücken, Po und Schultern – stabilisiert den Rumpf beim Laufen.",
+    frames: [
+      { label: "Start: Bauchlage, Arme lang nach vorn", pose: { workArms: true, h: [30, 131], n: [44, 134], p: [82, 136], k1: [110, 137], f1: [138, 138], e1: [26, 137], w1: [8, 137] } },
+      { label: "Ende: Arme und Beine leicht anheben", pose: { workArms: true, h: [32, 125], n: [46, 130], p: [82, 136], k1: [110, 133], f1: [136, 126], e1: [28, 126], w1: [10, 120] }, arrows: [[[16, 136], [14, 124]], [[140, 138], [140, 128]]] },
+    ],
+    steps: [
+      "Auf den Bauch legen (Matte), Arme lang nach vorn, Blick zum Boden.",
+      "Arme, Brust und Beine gleichzeitig wenige Zentimeter anheben.",
+      "2 Sek halten (später 3 Sek), langsam ablegen.",
+    ],
+    knee: ["Beine gestreckt, nur leicht anheben – kein Hohlkreuz erzwingen.", "Kissen unter die Knie, falls die Kniescheibe drückt."],
+    mistakes: ["Kopf in den Nacken legen.", "Zu hoch heben – wenige Zentimeter reichen."],
+    video: "Superman Übung Rücken Anleitung",
   },
   legswing: {
     name: "Beinpendeln (Mobilisation)",
