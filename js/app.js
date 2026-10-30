@@ -2,6 +2,7 @@ import { RECIPES, CATEGORIES, DIET_LABEL, SEASONS, KAIA_LABEL, quarterOf, active
 import { WEEKS, GOAL_WEEK, PLAN_START, PLAN_VERSION, sessionsFor, weekLabel, PEOPLE } from "./training.js";
 import { EXERCISES, illustration } from "./exercises.js";
 import { parseHealthText, matchWorkouts, workoutCategory, fmtWorkout, estimateWorkouts, MIN_EXERCISE } from "./health.js";
+const APP_VERSION = "gis-v13"; // gleich VERSION in sw.js
 
 // ---------- Speicher ----------
 const KEY = "gis-state-v1";
@@ -951,7 +952,8 @@ function renderMehr() {
     </div>
 
     <div class="section-title">Installation</div>
-    <div class="card"><p class="hint">In Safari öffnen → Teilen-Symbol → <b>„Zum Home-Bildschirm“</b>. Danach startet die App im Vollbild und funktioniert offline.</p></div>
+    <div class="card"><p class="hint">In Safari öffnen → Teilen-Symbol → <b>„Zum Home-Bildschirm“</b>. Danach startet die App im Vollbild und funktioniert offline.</p>
+      <p class="hint">Version <b>${APP_VERSION}</b>. Nach einem Update die App einmal ganz schließen und neu öffnen.</p></div>
 
     <p class="hint mt-5">Rezepte: Alnatura (alnatura.de) und Steffen Henssler (henssler.shop). Zutaten und kcal laut Originalseite, Zubereitung bitte im Original. Workouts: Pamela Reif auf YouTube.</p>`;
 }

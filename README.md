@@ -60,4 +60,4 @@ Alle Daten liegen lokal auf dem jeweiligen iPhone (`localStorage`), es gibt kein
 
 ## Technik
 
-`index.html`, `css/styles.css`, `js/app.js` (UI), `js/training.js` (Plan), `js/exercises.js` (Übungen mit Zeichnungen), `js/health.js` (Health-Import und Zuordnung), `js/recipes.js` (Rezepte), `sw.js` (Offline-Cache, bei Updates `VERSION` erhöhen), `manifest.webmanifest`.
+`index.html`, `css/styles.css`, `js/app.js` (UI), `js/training.js` (Plan), `js/exercises.js` (Übungen mit Zeichnungen), `js/health.js` (Health-Import und Zuordnung), `js/recipes.js` (Rezepte), `sw.js` (Offline-Cache, bei Updates `VERSION` in `sw.js` und `APP_VERSION` in `js/app.js` erhöhen), `manifest.webmanifest`.

@@ -1,5 +1,5 @@
 // Offline-Cache für die App-Dateien. Bei Änderungen VERSION erhöhen.
-const VERSION = "gis-v12";
+const VERSION = "gis-v13"; // gleich APP_VERSION in js/app.js
 const FILES = [
   "./",
   "index.html",
@@ -28,11 +28,12 @@ self.addEventListener("activate", (e) => {
   );
 });
 
-// Netzwerk zuerst (damit Updates ankommen), sonst Cache
+// Netzwerk zuerst (damit Updates ankommen), sonst Cache. „no-cache“ umgeht den
+// HTTP-Cache des Browsers (GitHub Pages: 10 Min.), fragt aber per ETag nur kurz nach.
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET" || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request.url, { cache: "no-cache", credentials: "same-origin" })
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(e.request, copy));
