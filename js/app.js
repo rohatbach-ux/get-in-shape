@@ -894,10 +894,11 @@ function renderMehr() {
 
     <div class="section-title">Apple Health einrichten</div>
     <div class="card">
+      <p class="hint"><b>iOS 27:</b> Am einfachsten über „Kurzbefehl beschreiben“ (Apple Intelligence) mit der Beschreibung aus dem Chat erstellen lassen.</p>
       <p class="hint">Einmalig auf deinem iPhone. Der Kurzbefehl liest die letzten 14 Tage aus Health und legt sie in die Zwischenablage; „Health abgleichen“ im Training startet ihn.</p>
       <ol class="steps">
         <li>Kurzbefehle → <b>+</b> → Name exakt: <b>${esc(state.healthShortcutName)}</b></li>
-        <li>Pro Datenart ein Block: <b>„Health-Samples suchen“</b> (letzte 14 Tage) → <b>„Wiederholen mit jedem Objekt“</b> → <b>„Text“</b> mit Kennung, Startdatum (ISO 8601) und Wert → <b>„Zu Variable hinzufügen“</b> (Name <b>Export</b>).</li>
+        <li>Pro Datenart ein Block: <b>„Health-Messungen suchen“</b> (ältere iOS: „Health-Samples suchen“) (letzte 14 Tage) → <b>„Wiederholen mit jedem Objekt“</b> → <b>„Text“</b> mit Kennung, Startdatum (ISO 8601) und Wert → <b>„Zu Variable hinzufügen“</b> (Name <b>Export</b>).</li>
         <li>Kennungen: <b>GEWICHT</b>, <b>SCHRITTE</b>, <b>AKTIV</b>, <b>RUHE</b>, <b>DISTANZ</b> (Tageswerte: „Gruppieren nach Tag“) und <b>WORKOUT</b> (Typ;Dauer;Distanz;Energie).</li>
         <li>Am Ende: <b>„Text kombinieren“</b> (Export, Neue Zeilen) → <b>„In Zwischenablage kopieren“</b>.</li>
         <li>Zurück in die App wechseln → <b>„Aus Zwischenablage einsetzen“</b>.</li>
