@@ -8,6 +8,7 @@
 //   AKTIV;2026-11-12T00:00:00+01:00;612        (aktive Energie, kcal)
 //   RUHE;2026-11-12T00:00:00+01:00;2.050       (Ruheenergie, kcal)
 //   DISTANZ;2026-11-12T00:00:00+01:00;7,4      (Gehen + Laufen, km)
+//   TRAININGSMINUTEN;2026-11-12T00:00:00+01:00;42  (grüner Ring, Minuten)
 //   WORKOUT;2026-11-12T18:30:00+01:00;Laufen;32 min;5,1 km;410 kcal
 //
 // Der Parser ist bewusst tolerant: Trenner ; | oder Tab, Komma oder Punkt,
@@ -65,7 +66,12 @@ function parseKm(raw) {
   return /\bm\b/.test(s) && !/km/.test(s) ? n / 1000 : n;
 }
 
-const DAY_FIELD = { SCHRITTE: "steps", STEPS: "steps", AKTIV: "active", ACTIVE: "active", RUHE: "basal", BASAL: "basal", DISTANZ: "distance", DISTANCE: "distance" };
+const DAY_FIELD = {
+  SCHRITTE: "steps", STEPS: "steps", AKTIV: "active", ACTIVE: "active", RUHE: "basal", BASAL: "basal",
+  DISTANZ: "distance", DISTANCE: "distance",
+  TRAININGSMINUTEN: "exercise", TRAINING: "exercise", TRAININGSZEIT: "exercise", EXERCISE: "exercise", EXERCISEMINUTES: "exercise",
+};
+const parseDayValue = (field, raw) => (field === "distance" ? parseKm(raw) : field === "exercise" ? parseMinutes(raw) : parseNumber(raw));
 
 export function parseHealthText(text) {
   const out = { weights: [], days: {}, workouts: [], skipped: 0, samples: [] };
@@ -82,10 +88,11 @@ export function parseHealthText(text) {
       if (kg && kg > 30 && kg < 300) out.weights.push({ date, time, kg: Math.round(kg * 10) / 10 });
       else skip(line);
     } else if (DAY_FIELD[kind]) {
-      const v = kind === "DISTANZ" || kind === "DISTANCE" ? parseKm(parts[2]) : parseNumber(parts[2]);
+      const field = DAY_FIELD[kind];
+      const v = parseDayValue(field, parts[2]);
       if (v == null) { skip(line); continue; }
       const d = (out.days[date] ||= {});
-      d[DAY_FIELD[kind]] = (d[DAY_FIELD[kind]] || 0) + v; // mehrere Werte am Tag addieren
+      d[field] = (d[field] || 0) + v; // mehrere Werte am Tag addieren
     } else if (kind === "WORKOUT") {
       const type = parts[2] || "Workout";
       out.workouts.push({
@@ -112,6 +119,7 @@ const COMPATIBLE = {
   cardio: ["cardio"],
   kraft: ["kraft", "studio", "reif"],
   reif: ["reif", "kraft"],
+  aktiv: ["kraft", "reif", "cardio"], // nur Trainingsminuten, Art unbekannt
 };
 const sessionCategory = (s) => (s.type === "studio" ? "kraft" : s.type);
 const DAY_INDEX = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 };
@@ -124,7 +132,7 @@ const DAY_INDEX = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 };
 export function matchWorkouts(sessions, workouts, isOpen, weekdayOf) {
   const pairs = [];
   for (const w of workouts) {
-    const cat = workoutCategory(w.type);
+    const cat = w.cat || workoutCategory(w.type);
     if (!cat) continue;
     for (const s of sessions) {
       if (!isOpen(s.id) || !COMPATIBLE[cat].includes(sessionCategory(s))) continue;
@@ -144,10 +152,35 @@ export function matchWorkouts(sessions, workouts, isOpen, weekdayOf) {
   return result;
 }
 
+// Kurzbefehle in iOS 27 liefern keine Workouts. Ersatz: Tage mit mindestens
+// 15 Trainingsminuten werden zu geschätzten Einheiten. Liegt die Distanz zu
+// Fuß an dem Tag deutlich über dem üblichen Wert (Median), war es ein Lauf
+// oder ein Spaziergang – je nach Minuten pro Zusatz-Kilometer. Sonst bleibt
+// es „Training“ (Kraft, Pamela Reif, Rad …). Nur Vorschläge, nie automatisch.
+export const MIN_EXERCISE = 15;
+export function estimateWorkouts(days, workouts = []) {
+  const real = new Set(workouts.map((w) => w.date));
+  const dists = Object.values(days).map((d) => d.distance).filter((x) => x > 0).sort((a, b) => a - b);
+  const base = dists.length >= 5 ? dists[Math.floor(dists.length / 2)] : null;
+  const out = [];
+  for (const [date, d] of Object.entries(days)) {
+    const min = d.exercise;
+    if (!(min >= MIN_EXERCISE) || real.has(date)) continue;
+    const extra = base != null && d.distance != null ? d.distance - base : 0;
+    let type = "Training", cat = "aktiv", km = null;
+    if (extra >= 2) {
+      km = Math.round(extra * 2) / 2;
+      [type, cat] = min / extra <= 11 ? ["Laufen", "lauf"] : ["Gehen", "cardio"]; // ≤ 11 Min/km → Laufen
+    }
+    out.push({ key: `est|${date}`, date, time: "", type, cat, min, km, kcal: null, estimated: true });
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export const fmtWorkout = (w) => {
-  const parts = [w.type];
-  if (w.km) parts.push(`${w.km.toLocaleString("de-DE", { maximumFractionDigits: 1 })} km`);
-  if (w.min) parts.push(`${Math.round(w.min)} Min`);
+  const parts = [w.estimated ? `${w.type} (geschätzt)` : w.type];
+  if (w.km) parts.push(`${w.estimated ? "ca. " : ""}${w.km.toLocaleString("de-DE", { maximumFractionDigits: 1 })} km`);
+  if (w.min) parts.push(`${Math.round(w.min)} ${w.estimated ? "Trainingsmin" : "Min"}`);
   if (w.kcal) parts.push(`${Math.round(w.kcal)} kcal`);
   return parts.join(" · ");
 };

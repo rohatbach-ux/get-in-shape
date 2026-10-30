@@ -1,7 +1,7 @@
 import { RECIPES, CATEGORIES, DIET_LABEL, SEASONS, KAIA_LABEL, quarterOf, activeRecipes } from "./recipes.js";
 import { WEEKS, GOAL_WEEK, PLAN_START, PLAN_VERSION, sessionsFor, weekLabel, PEOPLE } from "./training.js";
 import { EXERCISES, illustration } from "./exercises.js";
-import { parseHealthText, matchWorkouts, workoutCategory, fmtWorkout } from "./health.js";
+import { parseHealthText, matchWorkouts, workoutCategory, fmtWorkout, estimateWorkouts, MIN_EXERCISE } from "./health.js";
 
 // ---------- Speicher ----------
 const KEY = "gis-state-v1";
@@ -314,15 +314,23 @@ const healthOf = (p) => state.health[p] || (state.health[p] = { days: {}, workou
 const weekdayOf = (d) => (parseIso(d).getDay() + 6) % 7;
 const fmtInt = (n) => Math.round(n).toLocaleString("de-DE");
 
-function weekWorkouts(p, c) {
+function weekRange(c) {
   const start = addDays(parseIso(state.startDate), (c - 1) * 7);
-  const from = iso(start), to = iso(addDays(start, 6));
+  return [iso(start), iso(addDays(start, 6))];
+}
+function weekWorkouts(p, c) {
+  const [from, to] = weekRange(c);
   return healthOf(p).workouts.filter((w) => w.date >= from && w.date <= to);
+}
+// Aus Trainingsminuten geschätzte Einheiten der Woche (nur Tage ohne echtes Workout)
+function weekEstimates(p, c) {
+  const [from, to] = weekRange(c), h = healthOf(p);
+  return estimateWorkouts(h.days, h.workouts).filter((w) => w.date >= from && w.date <= to);
 }
 function healthSuggestions(p, c) {
   const w = planSeq(p)[c - 1];
   const used = new Set(Object.values(state.done[p]).map((l) => l.healthKey).filter(Boolean));
-  const ws = weekWorkouts(p, c).filter((x) => !used.has(x.key));
+  const ws = weekWorkouts(p, c).concat(weekEstimates(p, c)).filter((x) => !used.has(x.key));
   if (!w || !ws.length) return {};
   return matchWorkouts(sessionsFor(p, w), ws, (id) => !isDone(p, c, id), weekdayOf);
 }
@@ -340,29 +348,35 @@ function activityCard(p, c) {
   }
   const start = addDays(parseIso(state.startDate), (c - 1) * 7);
   let dates = Array.from({ length: 7 }, (_, i) => iso(addDays(start, i))).filter((d) => d <= iso(new Date()));
-  const lastWeek = !dates.length; // angezeigte Woche liegt in der Zukunft → letzte 7 Tage
+  // Woche liegt in der Zukunft oder hat noch keine Tageswerte (z. B. montags) → letzte 7 Tage
+  const lastWeek = !dates.some((d) => h.days[d]);
   if (lastWeek) dates = Array.from({ length: 7 }, (_, i) => iso(addDays(new Date(), -i)));
   const days = dates.map((d) => h.days[d]).filter(Boolean);
   const avg = (f) => { const v = days.map((d) => d[f]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-  const steps = avg("steps"), active = avg("active"), dist = avg("distance");
+  const steps = avg("steps"), active = avg("active"), dist = avg("distance"), exercise = avg("exercise");
+  const trainDays = days.filter((d) => d.exercise >= MIN_EXERCISE).length;
   // Ruheenergie unter 500 kcal/Tag ist unplausibel (z. B. falsch beschriftete km) → ignorieren
   const basalRaw = avg("basal"), basal = basalRaw != null && basalRaw >= 500 ? basalRaw : null;
   const total = active != null && basal != null ? active + basal : null;
   const ws = weekWorkouts(p, c);
-  const runKm = ws.filter((w) => workoutCategory(w.type) === "lauf").reduce((a, w) => a + (w.km || 0), 0);
+  const runs = ws.concat(weekEstimates(p, c)).filter((w) => (w.cat || workoutCategory(w.type)) === "lauf");
+  const runKm = runs.reduce((a, w) => a + (w.km || 0), 0);
+  const runEst = runs.some((w) => w.estimated);
   return `<div class="card activity">
     <div class="w-head"><b>Aktivität (Apple Health)</b><button class="btn ghost small" data-act="health-sync">${icon("repeat", "sm")}Abgleichen</button></div>
-    <div class="stats w-stats">
+    <div class="stats w-stats${exercise != null ? " four" : ""}">
       <div class="stat"><b>${steps != null ? fmtInt(steps) : "–"}</b><span>Ø Schritte</span></div>
       <div class="stat"><b>${active != null ? fmtInt(active) : "–"}</b><span>Ø aktive kcal</span></div>
+      ${exercise != null ? `<div class="stat"><b>${fmtInt(exercise)}</b><span>Ø Trainings­min</span></div>` : ""}
       ${runKm || dist == null
-        ? `<div class="stat"><b>${runKm ? runKm.toLocaleString("de-DE", { maximumFractionDigits: 1 }) : "0"}</b><span>km gelaufen</span></div>`
+        ? `<div class="stat"><b>${runKm ? (runEst ? "ca. " : "") + runKm.toLocaleString("de-DE", { maximumFractionDigits: 1 }) : "0"}</b><span>km gelaufen</span></div>`
         : `<div class="stat"><b>${dist.toLocaleString("de-DE", { maximumFractionDigits: 1 })}</b><span>Ø km zu Fuß</span></div>`}
     </div>
     ${total != null ? `<p class="hint mt-4">Ø Verbrauch <b>${fmtInt(total)} kcal/Tag</b> (aktiv + Ruhe). Richtwert fürs Abnehmen: ca. <b>${fmtInt(Math.max(1500, total - 600))} kcal</b> essen (≈ 600 kcal Defizit).</p>` : ""}
     ${total == null && active != null ? `<p class="hint mt-4">Für den Kalorien-Richtwert fehlt die Ruheenergie (Kurzbefehl-Zeile <b>RUHE</b>).</p>` : ""}
     ${steps != null && steps < 8000 ? `<p class="hint">Schrittziel 8.000–10.000 – noch ${fmtInt(8000 - steps)} pro Tag bis zur Untergrenze.</p>` : ""}
-    <p class="hint">${lastWeek ? "Werte der letzten 7 Tage · " : ""}${ws.length} Workout${ws.length === 1 ? "" : "s"} diese Woche · letzter Abgleich ${h.lastSync ? new Date(h.lastSync).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–"}</p>
+    ${exercise != null ? `<p class="hint">${trainDays} Trainingstag${trainDays === 1 ? "" : "e"} (ab ${MIN_EXERCISE} Trainingsminuten)${exercise < 30 ? ` · Apple-Ziel 30 Min/Tag, Ø fehlen ${fmtInt(30 - exercise)}` : " · Apple-Ziel 30 Min/Tag erreicht"}. Geschätzte Einheiten erscheinen beim Training zum Prüfen.</p>` : ""}
+    <p class="hint">${lastWeek ? "Werte der letzten 7 Tage · " : ""}${ws.length ? `${ws.length} Workout${ws.length === 1 ? "" : "s"} diese Woche · ` : ""}letzter Abgleich ${h.lastSync ? new Date(h.lastSync).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–"}</p>
   </div>`;
 }
 
@@ -387,7 +401,8 @@ function importHealth(text) {
   const found = wList.length + Object.keys(data.days).length + data.workouts.length;
   if (found) h.lastSync = Date.now();
   save(); render();
-  return { weights: wList.length, days: Object.keys(data.days).length, workouts: data.workouts.length, newWorkouts: newW.length, skipped: data.skipped, samples: data.samples, found };
+  const exerciseDays = Object.values(data.days).filter((d) => d.exercise != null).length;
+  return { weights: wList.length, days: Object.keys(data.days).length, exerciseDays, workouts: data.workouts.length, newWorkouts: newW.length, skipped: data.skipped, samples: data.samples, found };
 }
 
 function openHealthImport() {
@@ -404,8 +419,8 @@ function openHealthImport() {
   const show = (text) => {
     const r = importHealth(text);
     $("#h-result", sheet).innerHTML = r.found
-      ? `<div class="callout mt-4">${icon("check")}<div class="c-body"><b>Übernommen:</b> ${r.weights} Gewichtswert${r.weights === 1 ? "" : "e"}, ${r.days} ${r.days === 1 ? "Tag" : "Tage"} mit Schritten/kcal, ${r.workouts} Workout${r.workouts === 1 ? "" : "s"} (${r.newWorkouts} neu).${r.skipped ? ` ${r.skipped} Zeilen nicht erkannt.` : ""}${r.workouts ? "<br>Passende Workouts erscheinen jetzt bei den Einheiten zum Übernehmen." : ""}</div></div>
-        ${r.skipped ? `<div class="callout mt-4">${icon("info")}<div class="c-body"><b>Beispiele nicht erkannter Zeilen:</b><br>${r.samples.map((x) => `<code>${esc(x)}</code>`).join("<br>")}<br><span class="hint">Jede Zeile muss mit GEWICHT, SCHRITTE, AKTIV, RUHE, DISTANZ oder WORKOUT beginnen, dann ; Datum ; Wert.</span></div></div>` : ""}`
+      ? `<div class="callout mt-4">${icon("check")}<div class="c-body"><b>Übernommen:</b> ${r.weights} Gewichtswert${r.weights === 1 ? "" : "e"}, ${r.days} ${r.days === 1 ? "Tag" : "Tage"} mit Tageswerten${r.exerciseDays ? ` (${r.exerciseDays} mit Trainingsminuten)` : ""}, ${r.workouts} Workout${r.workouts === 1 ? "" : "s"} (${r.newWorkouts} neu).${r.skipped ? ` ${r.skipped} Zeilen nicht erkannt.` : ""}${r.workouts || r.exerciseDays ? "<br>Passende Workouts erscheinen jetzt bei den Einheiten zum Übernehmen." : ""}</div></div>
+        ${r.skipped ? `<div class="callout mt-4">${icon("info")}<div class="c-body"><b>Beispiele nicht erkannter Zeilen:</b><br>${r.samples.map((x) => `<code>${esc(x)}</code>`).join("<br>")}<br><span class="hint">Jede Zeile muss mit GEWICHT, SCHRITTE, AKTIV, RUHE, DISTANZ, TRAININGSMINUTEN oder WORKOUT beginnen, dann ; Datum ; Wert.</span></div></div>` : ""}`
       : `<div class="callout danger mt-4">${icon("alert")}<div class="c-body">Keine Health-Daten erkannt. Ist der Kurzbefehl vollständig durchgelaufen?${r.samples?.length ? `<br>Beispiel: <code>${esc(r.samples[0])}</code>` : ""}</div></div>`;
   };
   $("#h-paste", sheet).addEventListener("click", async () => {
@@ -911,7 +926,8 @@ function renderMehr() {
       <ol class="steps">
         <li>Kurzbefehle → <b>+</b> → Name exakt: <b>${esc(state.healthShortcutName)}</b></li>
         <li>Pro Datenart ein Block: <b>„Health-Messungen suchen“</b> (ältere iOS: „Health-Samples suchen“) (letzte 14 Tage) → <b>„Wiederholen mit jedem Objekt“</b> → <b>„Text“</b> mit Kennung, Startdatum (ISO 8601) und Wert → <b>„Zu Variable hinzufügen“</b> (Name <b>Export</b>).</li>
-        <li>Kennungen: <b>GEWICHT</b>, <b>SCHRITTE</b>, <b>AKTIV</b>, <b>RUHE</b>, <b>DISTANZ</b> (Tageswerte: „Gruppieren nach Tag“) und <b>WORKOUT</b> (Typ;Dauer;Distanz;Energie).</li>
+        <li>Kennungen: <b>GEWICHT</b>, <b>SCHRITTE</b>, <b>AKTIV</b>, <b>RUHE</b>, <b>DISTANZ</b>, <b>TRAININGSMINUTEN</b> (Tageswerte: „Gruppieren nach Tag“) und <b>WORKOUT</b> (Typ;Dauer;Distanz;Energie, nur falls verfügbar).</li>
+        <li>Ohne Workouts schätzt die App aus Trainingsminuten und Distanz, an welchen Tagen du gelaufen bist oder trainiert hast. Diese Vorschläge sind mit „geschätzt“ markiert – vor dem Übernehmen prüfen.</li>
         <li>Am Ende: <b>„Text kombinieren“</b> (Export, Neue Zeilen) → <b>„In Zwischenablage kopieren“</b>.</li>
         <li>Zurück in die App wechseln → <b>„Aus Zwischenablage einsetzen“</b>.</li>
       </ol>
