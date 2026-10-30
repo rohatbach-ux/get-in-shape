@@ -339,7 +339,9 @@ function activityCard(p, c) {
   const dates = Array.from({ length: 7 }, (_, i) => iso(addDays(start, i))).filter((d) => d <= iso(new Date()));
   const days = dates.map((d) => h.days[d]).filter(Boolean);
   const avg = (f) => { const v = days.map((d) => d[f]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-  const steps = avg("steps"), active = avg("active"), basal = avg("basal");
+  const steps = avg("steps"), active = avg("active"), dist = avg("distance");
+  // Ruheenergie unter 500 kcal/Tag ist unplausibel (z. B. falsch beschriftete km) → ignorieren
+  const basalRaw = avg("basal"), basal = basalRaw != null && basalRaw >= 500 ? basalRaw : null;
   const total = active != null && basal != null ? active + basal : null;
   const ws = weekWorkouts(p, c);
   const runKm = ws.filter((w) => workoutCategory(w.type) === "lauf").reduce((a, w) => a + (w.km || 0), 0);
@@ -348,9 +350,12 @@ function activityCard(p, c) {
     <div class="stats w-stats">
       <div class="stat"><b>${steps != null ? fmtInt(steps) : "–"}</b><span>Ø Schritte</span></div>
       <div class="stat"><b>${active != null ? fmtInt(active) : "–"}</b><span>Ø aktive kcal</span></div>
-      <div class="stat"><b>${runKm ? runKm.toLocaleString("de-DE", { maximumFractionDigits: 1 }) : "0"}</b><span>km gelaufen</span></div>
+      ${runKm || dist == null
+        ? `<div class="stat"><b>${runKm ? runKm.toLocaleString("de-DE", { maximumFractionDigits: 1 }) : "0"}</b><span>km gelaufen</span></div>`
+        : `<div class="stat"><b>${dist.toLocaleString("de-DE", { maximumFractionDigits: 1 })}</b><span>Ø km zu Fuß</span></div>`}
     </div>
     ${total != null ? `<p class="hint mt-4">Ø Verbrauch <b>${fmtInt(total)} kcal/Tag</b> (aktiv + Ruhe). Richtwert fürs Abnehmen: ca. <b>${fmtInt(Math.max(1500, total - 600))} kcal</b> essen (≈ 600 kcal Defizit).</p>` : ""}
+    ${total == null && active != null ? `<p class="hint mt-4">Für den Kalorien-Richtwert fehlt die Ruheenergie (Kurzbefehl-Zeile <b>RUHE</b>).</p>` : ""}
     ${steps != null && steps < 8000 ? `<p class="hint">Schrittziel 8.000–10.000 – noch ${fmtInt(8000 - steps)} pro Tag bis zur Untergrenze.</p>` : ""}
     <p class="hint">${ws.length} Workout${ws.length === 1 ? "" : "s"} diese Woche · letzter Abgleich ${h.lastSync ? new Date(h.lastSync).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–"}</p>
   </div>`;

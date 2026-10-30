@@ -1,5 +1,5 @@
 // Offline-Cache für die App-Dateien. Bei Änderungen VERSION erhöhen.
-const VERSION = "gis-v8";
+const VERSION = "gis-v9";
 const FILES = [
   "./",
   "index.html",
