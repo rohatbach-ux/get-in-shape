@@ -68,21 +68,22 @@ function parseKm(raw) {
 const DAY_FIELD = { SCHRITTE: "steps", STEPS: "steps", AKTIV: "active", ACTIVE: "active", RUHE: "basal", BASAL: "basal", DISTANZ: "distance", DISTANCE: "distance" };
 
 export function parseHealthText(text) {
-  const out = { weights: [], days: {}, workouts: [], skipped: 0 };
+  const out = { weights: [], days: {}, workouts: [], skipped: 0, samples: [] };
+  const skip = (line) => { out.skipped++; if (out.samples.length < 3) out.samples.push(line); };
   for (const rawLine of String(text || "").split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
     const parts = line.split(/[;|\t]/).map((x) => x.trim());
     const kind = (parts[0] || "").toUpperCase().replace(/[^A-ZÄÖÜ]/g, "");
     const { date, time } = parseDate(parts[1]);
-    if (!date) { out.skipped++; continue; }
+    if (!date) { skip(line); continue; }
     if (kind === "GEWICHT" || kind === "WEIGHT") {
       const kg = parseNumber(parts[2]);
       if (kg && kg > 30 && kg < 300) out.weights.push({ date, time, kg: Math.round(kg * 10) / 10 });
-      else out.skipped++;
+      else skip(line);
     } else if (DAY_FIELD[kind]) {
       const v = kind === "DISTANZ" || kind === "DISTANCE" ? parseKm(parts[2]) : parseNumber(parts[2]);
-      if (v == null) { out.skipped++; continue; }
+      if (v == null) { skip(line); continue; }
       const d = (out.days[date] ||= {});
       d[DAY_FIELD[kind]] = (d[DAY_FIELD[kind]] || 0) + v; // mehrere Werte am Tag addieren
     } else if (kind === "WORKOUT") {
@@ -91,7 +92,7 @@ export function parseHealthText(text) {
         key: `${date}T${time}|${type}`, date, time, type,
         min: parseMinutes(parts[3]), km: parseKm(parts[4]), kcal: parseNumber(parts[5]),
       });
-    } else out.skipped++;
+    } else skip(line);
   }
   return out;
 }

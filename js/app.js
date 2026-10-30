@@ -247,7 +247,9 @@ function weightCard(p) {
     </div>`;
   }
   // Startgewicht: erste Messung ab Planstart (ältere Health-Werte zählen nur zum Verlauf)
-  const first = (list.find((e) => e.date >= state.startDate) || list[0]).kg, latest = list[list.length - 1].kg;
+  // Vor Planstart: letzte Messung als Basis (alte Werte zählen nicht als Fortschritt)
+  const first = (list.find((e) => e.date >= state.startDate) || list[list.length - 1]).kg, latest = list[list.length - 1].kg;
+  const ageDays = Math.round((new Date() - parseIso(list[list.length - 1].date)) / 864e5);
   const avgs = weeklyAverages(list);
   const avg = avgs[avgs.length - 1].kg;
   const lost = first - avg;
@@ -256,12 +258,13 @@ function weightCard(p) {
     <div class="w-head"><b>Gewicht</b><button class="btn ghost small" data-act="weight-add">${icon("plus", "sm")}Eintragen</button></div>
     <div class="stats w-stats">
       <div class="stat"><b>${fmtKg(avg)}</b><span>Wochen-Ø</span></div>
-      <div class="stat"><b>${lost >= 0 ? "−" : "+"}${fmtKg(Math.abs(lost))}</b><span>seit Start (${fmtKg(first)})</span></div>
+      <div class="stat"><b>${lost > 0.05 ? "−" : lost < -0.05 ? "+" : ""}${fmtKg(Math.abs(lost))}</b><span>seit Start (${fmtKg(first)})</span></div>
       <div class="stat"><b>${goal ? fmtKg(Math.max(0, avg - goal)) : "–"}</b><span>${goal ? `bis Ziel ${fmtKg(goal)}` : "kein Ziel"}</span></div>
     </div>
     ${pct !== null ? `<div class="progress mt-4"><div class="bar"><i style="width:${pct}%"></i></div><b>${pct} %</b></div>` : ""}
     ${weightSpark(avgs, goal)}
     <p class="hint mt-2">Letzter Eintrag: ${fmtKg(latest)} kg am ${parseIso(list[list.length - 1].date).toLocaleDateString("de-DE")}</p>
+    ${ageDays > 14 ? `<div class="callout danger">${icon("alert")}<div class="c-body">Letzte Messung vor ${ageDays} Tagen. Überträgt die Waage noch an Health? Sonst Gewicht hier eintragen.</div></div>` : ""}
   </div>`;
 }
 
@@ -336,7 +339,9 @@ function activityCard(p, c) {
     </div>`;
   }
   const start = addDays(parseIso(state.startDate), (c - 1) * 7);
-  const dates = Array.from({ length: 7 }, (_, i) => iso(addDays(start, i))).filter((d) => d <= iso(new Date()));
+  let dates = Array.from({ length: 7 }, (_, i) => iso(addDays(start, i))).filter((d) => d <= iso(new Date()));
+  const lastWeek = !dates.length; // angezeigte Woche liegt in der Zukunft → letzte 7 Tage
+  if (lastWeek) dates = Array.from({ length: 7 }, (_, i) => iso(addDays(new Date(), -i)));
   const days = dates.map((d) => h.days[d]).filter(Boolean);
   const avg = (f) => { const v = days.map((d) => d[f]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
   const steps = avg("steps"), active = avg("active"), dist = avg("distance");
@@ -357,7 +362,7 @@ function activityCard(p, c) {
     ${total != null ? `<p class="hint mt-4">Ø Verbrauch <b>${fmtInt(total)} kcal/Tag</b> (aktiv + Ruhe). Richtwert fürs Abnehmen: ca. <b>${fmtInt(Math.max(1500, total - 600))} kcal</b> essen (≈ 600 kcal Defizit).</p>` : ""}
     ${total == null && active != null ? `<p class="hint mt-4">Für den Kalorien-Richtwert fehlt die Ruheenergie (Kurzbefehl-Zeile <b>RUHE</b>).</p>` : ""}
     ${steps != null && steps < 8000 ? `<p class="hint">Schrittziel 8.000–10.000 – noch ${fmtInt(8000 - steps)} pro Tag bis zur Untergrenze.</p>` : ""}
-    <p class="hint">${ws.length} Workout${ws.length === 1 ? "" : "s"} diese Woche · letzter Abgleich ${h.lastSync ? new Date(h.lastSync).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–"}</p>
+    <p class="hint">${lastWeek ? "Werte der letzten 7 Tage · " : ""}${ws.length} Workout${ws.length === 1 ? "" : "s"} diese Woche · letzter Abgleich ${h.lastSync ? new Date(h.lastSync).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–"}</p>
   </div>`;
 }
 
@@ -382,7 +387,7 @@ function importHealth(text) {
   const found = wList.length + Object.keys(data.days).length + data.workouts.length;
   if (found) h.lastSync = Date.now();
   save(); render();
-  return { weights: wList.length, days: Object.keys(data.days).length, workouts: data.workouts.length, newWorkouts: newW.length, skipped: data.skipped, found };
+  return { weights: wList.length, days: Object.keys(data.days).length, workouts: data.workouts.length, newWorkouts: newW.length, skipped: data.skipped, samples: data.samples, found };
 }
 
 function openHealthImport() {
@@ -399,8 +404,9 @@ function openHealthImport() {
   const show = (text) => {
     const r = importHealth(text);
     $("#h-result", sheet).innerHTML = r.found
-      ? `<div class="callout mt-4">${icon("check")}<div class="c-body"><b>Übernommen:</b> ${r.weights} Gewichtswert${r.weights === 1 ? "" : "e"}, ${r.days} ${r.days === 1 ? "Tag" : "Tage"} mit Schritten/kcal, ${r.workouts} Workout${r.workouts === 1 ? "" : "s"} (${r.newWorkouts} neu).${r.skipped ? ` ${r.skipped} Zeilen nicht erkannt.` : ""}<br>Passende Workouts erscheinen jetzt bei den Einheiten zum Übernehmen.</div></div>`
-      : `<div class="callout danger mt-4">${icon("alert")}<div class="c-body">Keine Health-Daten erkannt. Ist der Kurzbefehl vollständig durchgelaufen?</div></div>`;
+      ? `<div class="callout mt-4">${icon("check")}<div class="c-body"><b>Übernommen:</b> ${r.weights} Gewichtswert${r.weights === 1 ? "" : "e"}, ${r.days} ${r.days === 1 ? "Tag" : "Tage"} mit Schritten/kcal, ${r.workouts} Workout${r.workouts === 1 ? "" : "s"} (${r.newWorkouts} neu).${r.skipped ? ` ${r.skipped} Zeilen nicht erkannt.` : ""}${r.workouts ? "<br>Passende Workouts erscheinen jetzt bei den Einheiten zum Übernehmen." : ""}</div></div>
+        ${r.skipped ? `<div class="callout mt-4">${icon("info")}<div class="c-body"><b>Beispiele nicht erkannter Zeilen:</b><br>${r.samples.map((x) => `<code>${esc(x)}</code>`).join("<br>")}<br><span class="hint">Jede Zeile muss mit GEWICHT, SCHRITTE, AKTIV, RUHE, DISTANZ oder WORKOUT beginnen, dann ; Datum ; Wert.</span></div></div>` : ""}`
+      : `<div class="callout danger mt-4">${icon("alert")}<div class="c-body">Keine Health-Daten erkannt. Ist der Kurzbefehl vollständig durchgelaufen?${r.samples?.length ? `<br>Beispiel: <code>${esc(r.samples[0])}</code>` : ""}</div></div>`;
   };
   $("#h-paste", sheet).addEventListener("click", async () => {
     try { show(await navigator.clipboard.readText()); }
